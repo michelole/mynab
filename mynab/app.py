@@ -317,7 +317,7 @@ def create_category_plot(category_name, transactions_df, budget_df):
                     go.Scatter(
                         x=all_months,
                         y=[budget_amount] * len(all_months),
-                        name=f'Monthly Budget (${budget_amount:,.0f})',
+                        name=f'Monthly Budget (€{budget_amount:,.0f})',
                         line=dict(color='#2ca02c', width=3),
                         mode='lines'
                     )
@@ -330,7 +330,7 @@ def create_category_plot(category_name, transactions_df, budget_df):
         showlegend=True,
         hovermode='x unified',
         xaxis_title='Month',
-        yaxis_title='Amount ($)',
+        yaxis_title='Amount (€)',
         barmode='overlay'
     )
     
@@ -358,7 +358,7 @@ def create_category_group_summary(transactions_df, budget_df):
         y='amount',
         color='category_group',
         title='Monthly Expenses by Category Group',
-        labels={'amount': 'Amount ($)', 'month': 'Month', 'category_group': 'Category Group'},
+        labels={'amount': 'Amount (€)', 'month': 'Month', 'category_group': 'Category Group'},
         color_discrete_sequence=px.colors.qualitative.Set3
     )
     
@@ -437,7 +437,7 @@ def create_group_trends_plot(transactions_df, plot_type='moving_average'):
         showlegend=True,
         hovermode='x unified',
         xaxis_title='Month',
-        yaxis_title='Amount ($)'
+        yaxis_title='Amount (€)'
     )
     
     return fig
@@ -477,11 +477,11 @@ def main():
     
     with col1:
         total_expenses = transactions_df['amount'].sum()
-        st.metric("Total Expenses", f"${total_expenses:,.2f}")
+        st.metric("Total Expenses", f"€{total_expenses:,.2f}")
     
     with col2:
         avg_monthly = transactions_df.groupby(transactions_df['date'].dt.to_period('M'))['amount'].sum().mean()
-        st.metric("Avg Monthly Expenses", f"${avg_monthly:,.2f}")
+        st.metric("Avg Monthly Expenses", f"€{avg_monthly:,.2f}")
     
     with col3:
         num_categories = len(categories_data)

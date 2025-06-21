@@ -62,14 +62,14 @@ def example_ynab_usage():
             
             if expenses:
                 df = pd.DataFrame(expenses)
-                print(f"\nTotal expenses: ${df['amount'].sum():,.2f}")
-                print(f"Average daily expense: ${df['amount'].mean():,.2f}")
+                print(f"\nTotal expenses: €{df['amount'].sum():,.2f}")
+                print(f"Average daily expense: €{df['amount'].mean():,.2f}")
                 
                 # Group by category
                 by_category = df.groupby('category')['amount'].sum().sort_values(ascending=False)
                 print("\nTop 5 expense categories:")
                 for category, amount in by_category.head().items():
-                    print(f"  {category}: ${amount:,.2f}")
+                    print(f"  {category}: €{amount:,.2f}")
     
     except Exception as e:
         print(f"Error: {str(e)}")

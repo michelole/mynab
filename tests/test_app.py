@@ -121,8 +121,8 @@ def test_process_transactions_data():
     assert len(df) == 2
     
     # Check that amounts are converted from millidollars
-    assert df.iloc[0]['amount'] == 5.0  # -5000 millidollars = $5.00
-    assert df.iloc[1]['amount'] == 2.0  # -2000 millidollars = $2.00
+    assert df.iloc[0]['amount'] == 5.0  # -5000 millidollars = €5.00
+    assert df.iloc[1]['amount'] == 2.0  # -2000 millidollars = €2.00
 
 
 if __name__ == "__main__":
