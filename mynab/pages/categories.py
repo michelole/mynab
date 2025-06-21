@@ -439,5 +439,71 @@ def main():
                     else:
                         st.info(f"No data available for {category_name}")
 
+    # Raw Data Section
+    st.header("📋 Raw Transaction Data")
+    
+    # Category filter for raw data
+    st.subheader("Filter Options")
+    
+    # Add "All Categories" option
+    all_categories_option = ["All Categories"] + category_names
+    selected_category = st.selectbox(
+        "Select Category to Filter:",
+        options=all_categories_option,
+        index=0,
+        help="Choose a specific category or 'All Categories' to see all transactions"
+    )
+    
+    # Filter data based on selection
+    if selected_category == "All Categories":
+        filtered_raw_data = filtered_transactions_df.copy()
+    else:
+        filtered_raw_data = filtered_transactions_df[filtered_transactions_df['category'] == selected_category].copy()
+    
+    # Ensure it's a DataFrame
+    filtered_raw_data = pd.DataFrame(filtered_raw_data)
+    
+    # Display data info
+    st.info(f"Showing {len(filtered_raw_data)} transactions for: **{selected_category}**")
+    
+    # Display the raw data
+    if not filtered_raw_data.empty:
+        # Format the data for display
+        display_data = filtered_raw_data.copy()
+        display_data['date'] = pd.to_datetime(display_data['date']).dt.strftime('%Y-%m-%d')
+        display_data['amount'] = display_data['amount'].round(2)
+        
+        # Reorder columns for better display
+        column_order = ['date', 'category', 'category_group', 'amount', 'payee_name', 'memo', 'is_income']
+        display_data = display_data[column_order]
+        
+        # Rename columns for better display
+        display_data = display_data.rename(columns={
+            'date': 'Date',
+            'category': 'Category',
+            'category_group': 'Category Group',
+            'amount': 'Amount (€)',
+            'payee_name': 'Payee',
+            'memo': 'Memo',
+            'is_income': 'Is Income'
+        })
+        
+        st.dataframe(
+            display_data,
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Download button for filtered data
+        csv = display_data.to_csv(index=False)
+        st.download_button(
+            label="Download filtered data as CSV",
+            data=csv,
+            file_name=f"ynab_transactions_{selected_category.replace(' ', '_').lower()}_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+    else:
+        st.warning(f"No transactions found for category: {selected_category}")
+
 if __name__ == "__main__":
     main() 

@@ -541,7 +541,25 @@ def main():
     tab1, tab2, tab3 = st.tabs(["Transactions", "Budget Data", "Categories"])
     
     with tab1:
-        st.dataframe(transactions_df, use_container_width=True)
+        # Add category filter
+        if not transactions_df.empty and 'category' in transactions_df.columns:
+            # Get unique categories for the selectbox
+            unique_categories = ['All Categories'] + sorted(transactions_df['category'].unique().tolist())
+            selected_category = st.selectbox(
+                "Filter by Category:",
+                options=unique_categories,
+                index=0
+            )
+            
+            # Filter dataframe based on selection
+            if selected_category == 'All Categories':
+                filtered_df = transactions_df
+            else:
+                filtered_df = transactions_df[transactions_df['category'] == selected_category]
+            
+            st.dataframe(filtered_df, use_container_width=True)
+        else:
+            st.dataframe(transactions_df, use_container_width=True)
     
     with tab2:
         if not budget_df.empty:
