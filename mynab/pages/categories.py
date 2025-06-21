@@ -227,7 +227,7 @@ def calculate_forecast_trend(data, periods=3):
     
     return pd.Series(trend_line, index=data.index), pd.Series(forecast, index=future_x)
 
-def create_category_plot(category_name, transactions_df, budget_df):
+def create_category_plot(category_name, transactions_df, budget_df, global_month_range):
     """Create comprehensive plot for a single category"""
     # Filter data for this category
     cat_transactions = transactions_df[transactions_df['category'] == category_name].copy()
@@ -255,11 +255,27 @@ def create_category_plot(category_name, transactions_df, budget_df):
         monthly_expenses['month_date'] = pd.to_datetime(monthly_expenses['month'])
         monthly_expenses = monthly_expenses.sort_values('month_date')
         
-        # Bar chart for actual expenses
+        # Use the global month range instead of category-specific range
+        all_months_df = pd.DataFrame({
+            'month_date': global_month_range,
+            'month': global_month_range.strftime('%Y-%m')
+        })
+        
+        # Merge with actual data to include months with 0 expenses
+        complete_monthly_data = all_months_df.merge(
+            monthly_expenses[['month', 'amount']], 
+            on='month', 
+            how='left'
+        ).fillna(0)
+        
+        # Sort by month date for proper ordering
+        complete_monthly_data = complete_monthly_data.sort_values('month_date')
+        
+        # Bar chart for actual expenses (including 0 values)
         fig.add_trace(
             go.Bar(
-                x=monthly_expenses['month'],
-                y=monthly_expenses['amount'],
+                x=complete_monthly_data['month'],
+                y=complete_monthly_data['amount'],
                 name='Actual Expenses',
                 marker_color='#ff7f0e',
                 opacity=0.8
@@ -267,12 +283,12 @@ def create_category_plot(category_name, transactions_df, budget_df):
         )
         
         # Moving average line (if we have enough data)
-        if len(monthly_expenses) >= 3:
-            moving_avg = calculate_moving_average(monthly_expenses['amount'])
+        if len(complete_monthly_data) >= 3:
+            moving_avg = calculate_moving_average(complete_monthly_data['amount'])
             
             fig.add_trace(
                 go.Scatter(
-                    x=monthly_expenses['month'],
+                    x=complete_monthly_data['month'],
                     y=moving_avg,
                     name='12-Month Moving Average',
                     line=dict(color='#1f77b4', width=2, dash='dash'),
@@ -281,11 +297,11 @@ def create_category_plot(category_name, transactions_df, budget_df):
             )
             
             # Forecast trend line
-            trend_line, forecast = calculate_forecast_trend(monthly_expenses['amount'])
+            trend_line, forecast = calculate_forecast_trend(complete_monthly_data['amount'])
             
             fig.add_trace(
                 go.Scatter(
-                    x=monthly_expenses['month'],
+                    x=complete_monthly_data['month'],
                     y=trend_line,
                     name='12-Month Forecast Trend',
                     line=dict(color='#d62728', width=2),
@@ -295,7 +311,7 @@ def create_category_plot(category_name, transactions_df, budget_df):
             
             # Add forecast extension
             future_months = pd.date_range(
-                start=monthly_expenses['month_date'].iloc[-1] + pd.DateOffset(months=1),
+                start=complete_monthly_data['month_date'].iloc[-1] + pd.DateOffset(months=1),
                 periods=3,
                 freq='M'
             )
@@ -315,8 +331,8 @@ def create_category_plot(category_name, transactions_df, budget_df):
             budget_amount = cat_budget['budgeted'].iloc[0]
             if budget_amount > 0:
                 # Create a horizontal line across all months
-                all_months = monthly_expenses['month'].tolist()
-                if len(monthly_expenses) >= 3 and 'future_months' in locals():
+                all_months = complete_monthly_data['month'].tolist()
+                if len(complete_monthly_data) >= 3 and 'future_months' in locals():
                     # Include future months in the budget line
                     future_month_strs = future_months.strftime('%Y-%m').tolist()
                     all_months.extend(future_month_strs)
@@ -381,7 +397,29 @@ def main():
     # Get all category names (excluding the specified groups)
     category_names = sorted([cat['name'] for cat in categories_data])
     
+    # Calculate global month range from all categories
+    all_transactions = filtered_transactions_df.copy()
+    all_transactions['date'] = pd.to_datetime(all_transactions['date'])
+    all_transactions['month'] = all_transactions['date'].dt.to_period('M')
+    
+    # Get the earliest and latest months from all data
+    earliest_month = all_transactions['month'].min()
+    latest_month = all_transactions['month'].max()
+    
+    # Convert to datetime for date_range
+    earliest_date = earliest_month.to_timestamp()
+    latest_date = latest_month.to_timestamp()
+    
+    # Include current month if it's not already in the data
+    current_month = pd.Timestamp.now().replace(day=1)
+    if current_month > latest_date:
+        latest_date = current_month
+    
+    # Create global month range
+    global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='M')
+    
     st.info(f"Displaying analysis for {len(category_names)} categories (excluding Internal Master Category, Uncategorized, and Credit Card Payments)")
+    st.info(f"Date range: {earliest_date.strftime('%Y-%m')} to {latest_date.strftime('%Y-%m')}")
     
     # Display all category plots in a grid
     st.header("📊 All Category Plots")
@@ -395,7 +433,7 @@ def main():
                 category_name = category_names[i + j]
                 with col:
                     st.subheader(category_name)
-                    category_fig = create_category_plot(category_name, filtered_transactions_df, budget_df)
+                    category_fig = create_category_plot(category_name, filtered_transactions_df, budget_df, global_month_range)
                     if category_fig:
                         st.plotly_chart(category_fig, use_container_width=True)
                     else:
