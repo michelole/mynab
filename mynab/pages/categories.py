@@ -120,13 +120,59 @@ def process_categories_data(categories_response):
     return categories_data, category_groups
 
 def process_transactions_data(transactions_response, categories_data):
-    """Process transactions data into a structured format"""
+    """Process transactions data into a structured format, handling split transactions"""
     transactions = []
     
     for transaction in transactions_response.data.transactions:
-        # Include both income (positive) and expenses (negative)
-        if transaction.amount != 0:  # Skip zero amounts
-            # Find category name
+        # Skip zero amount transactions
+        if transaction.amount == 0:
+            continue
+            
+        # Get the date
+        transaction_date = None
+        if hasattr(transaction, 'var_date'):
+            transaction_date = transaction.var_date
+        elif hasattr(transaction, 'date'):
+            transaction_date = transaction.date
+        else:
+            # Skip transactions without a date
+            continue
+        
+        # Check if this transaction has subtransactions (split transaction)
+        has_subtransactions = hasattr(transaction, 'subtransactions') and transaction.subtransactions
+        
+        if has_subtransactions:
+            # Process each subtransaction
+            for subtransaction in transaction.subtransactions:
+                if subtransaction.amount == 0:
+                    continue
+                    
+                # Find category name and group for subtransaction
+                category_name = subtransaction.category_name or ""
+                category_group = ""
+                
+                if subtransaction.category_id:
+                    for cat in categories_data:
+                        if cat['id'] == subtransaction.category_id:
+                            category_group = cat['group']
+                            break
+                
+                # Determine if this is income or expense
+                is_income = subtransaction.amount > 0
+                
+                transactions.append({
+                    'date': transaction_date,
+                    'amount': -subtransaction.amount / 1000,  # Convert from millidollars and flip sign
+                    'category': category_name,
+                    'category_group': category_group,
+                    'payee_name': transaction.payee_name or "",
+                    'memo': subtransaction.memo or transaction.memo or "",
+                    'is_income': is_income,
+                    'transaction_id': transaction.id,
+                    'is_subtransaction': True
+                })
+        else:
+            # Process regular transaction (not split)
             category_name = transaction.category_name or ""
             category_group = ""
             
@@ -136,16 +182,6 @@ def process_transactions_data(transactions_response, categories_data):
                     if cat['id'] == transaction.category_id:
                         category_group = cat['group']
                         break
-            
-            # Get the date - use var_date as shown in debug output
-            transaction_date = None
-            if hasattr(transaction, 'var_date'):
-                transaction_date = transaction.var_date
-            elif hasattr(transaction, 'date'):
-                transaction_date = transaction.date
-            else:
-                # Skip transactions without a date
-                continue
             
             # Determine if this is income or expense
             is_income = transaction.amount > 0
@@ -157,7 +193,9 @@ def process_transactions_data(transactions_response, categories_data):
                 'category_group': category_group,
                 'payee_name': transaction.payee_name or "",
                 'memo': transaction.memo or "",
-                'is_income': is_income
+                'is_income': is_income,
+                'transaction_id': transaction.id,
+                'is_subtransaction': False
             })
     
     df = pd.DataFrame(transactions)
@@ -445,26 +483,53 @@ def main():
     # Category filter for raw data
     st.subheader("Filter Options")
     
-    # Add "All Categories" option
-    all_categories_option = ["All Categories"] + category_names
-    selected_category = st.selectbox(
-        "Select Category to Filter:",
-        options=all_categories_option,
-        index=0,
-        help="Choose a specific category or 'All Categories' to see all transactions"
-    )
+    # Create two columns for filters
+    filter_col1, filter_col2 = st.columns(2)
     
-    # Filter data based on selection
-    if selected_category == "All Categories":
-        filtered_raw_data = filtered_transactions_df.copy()
-    else:
-        filtered_raw_data = filtered_transactions_df[filtered_transactions_df['category'] == selected_category].copy()
+    with filter_col1:
+        # Add "All Categories" option
+        all_categories_option = ["All Categories"] + category_names
+        selected_category = st.selectbox(
+            "Select Category to Filter:",
+            options=all_categories_option,
+            index=0,
+            help="Choose a specific category or 'All Categories' to see all transactions"
+        )
+    
+    with filter_col2:
+        # Split transaction filter
+        if 'is_subtransaction' in filtered_transactions_df.columns:
+            split_filter_options = ['All Transactions', 'Regular Transactions Only', 'Split Transactions Only']
+            selected_split_filter = st.selectbox(
+                "Filter by Transaction Type:",
+                options=split_filter_options,
+                index=0,
+                help="Choose to view all transactions, only regular transactions, or only split transactions"
+            )
+        else:
+            selected_split_filter = 'All Transactions'
+    
+    # Filter data based on selections
+    filtered_raw_data = filtered_transactions_df.copy()
+    
+    # Apply category filter
+    if selected_category != "All Categories":
+        filtered_raw_data = filtered_raw_data[filtered_raw_data['category'] == selected_category]
+    
+    # Apply split transaction filter
+    if selected_split_filter == 'Regular Transactions Only':
+        filtered_raw_data = filtered_raw_data[filtered_raw_data['is_subtransaction'] == False]
+    elif selected_split_filter == 'Split Transactions Only':
+        filtered_raw_data = filtered_raw_data[filtered_raw_data['is_subtransaction'] == True]
     
     # Ensure it's a DataFrame
     filtered_raw_data = pd.DataFrame(filtered_raw_data)
     
     # Display data info
-    st.info(f"Showing {len(filtered_raw_data)} transactions for: **{selected_category}**")
+    filter_info = f"Showing {len(filtered_raw_data)} transactions for: **{selected_category}**"
+    if selected_split_filter != 'All Transactions':
+        filter_info += f" ({selected_split_filter.lower()})"
+    st.info(filter_info)
     
     # Display the raw data
     if not filtered_raw_data.empty:

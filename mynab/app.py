@@ -120,13 +120,59 @@ def process_categories_data(categories_response):
     return categories_data, category_groups
 
 def process_transactions_data(transactions_response, categories_data):
-    """Process transactions data into a structured format"""
+    """Process transactions data into a structured format, handling split transactions"""
     transactions = []
     
     for transaction in transactions_response.data.transactions:
-        # Include both income (positive) and expenses (negative)
-        if transaction.amount != 0:  # Skip zero amounts
-            # Find category name
+        # Skip zero amount transactions
+        if transaction.amount == 0:
+            continue
+            
+        # Get the date
+        transaction_date = None
+        if hasattr(transaction, 'var_date'):
+            transaction_date = transaction.var_date
+        elif hasattr(transaction, 'date'):
+            transaction_date = transaction.date
+        else:
+            # Skip transactions without a date
+            continue
+        
+        # Check if this transaction has subtransactions (split transaction)
+        has_subtransactions = hasattr(transaction, 'subtransactions') and transaction.subtransactions
+        
+        if has_subtransactions:
+            # Process each subtransaction
+            for subtransaction in transaction.subtransactions:
+                if subtransaction.amount == 0:
+                    continue
+                    
+                # Find category name and group for subtransaction
+                category_name = subtransaction.category_name or ""
+                category_group = ""
+                
+                if subtransaction.category_id:
+                    for cat in categories_data:
+                        if cat['id'] == subtransaction.category_id:
+                            category_group = cat['group']
+                            break
+                
+                # Determine if this is income or expense
+                is_income = subtransaction.amount > 0
+                
+                transactions.append({
+                    'date': transaction_date,
+                    'amount': subtransaction.amount / 1000,  # Convert from millidollars
+                    'category': category_name,
+                    'category_group': category_group,
+                    'payee_name': transaction.payee_name or "",
+                    'memo': subtransaction.memo or transaction.memo or "",
+                    'is_income': is_income,
+                    'transaction_id': transaction.id,
+                    'is_subtransaction': True
+                })
+        else:
+            # Process regular transaction (not split)
             category_name = transaction.category_name or ""
             category_group = ""
             
@@ -136,16 +182,6 @@ def process_transactions_data(transactions_response, categories_data):
                     if cat['id'] == transaction.category_id:
                         category_group = cat['group']
                         break
-            
-            # Get the date - use var_date as shown in debug output
-            transaction_date = None
-            if hasattr(transaction, 'var_date'):
-                transaction_date = transaction.var_date
-            elif hasattr(transaction, 'date'):
-                transaction_date = transaction.date
-            else:
-                # Skip transactions without a date
-                continue
             
             # Determine if this is income or expense
             is_income = transaction.amount > 0
@@ -157,7 +193,9 @@ def process_transactions_data(transactions_response, categories_data):
                 'category_group': category_group,
                 'payee_name': transaction.payee_name or "",
                 'memo': transaction.memo or "",
-                'is_income': is_income
+                'is_income': is_income,
+                'transaction_id': transaction.id,
+                'is_subtransaction': False
             })
     
     df = pd.DataFrame(transactions)
