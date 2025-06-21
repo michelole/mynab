@@ -351,7 +351,7 @@ def create_category_plot(category_name, transactions_df, budget_df, global_month
             future_months = pd.date_range(
                 start=complete_monthly_data['month_date'].iloc[-1] + pd.DateOffset(months=1),
                 periods=3,
-                freq='ME'
+                freq='MS'
             )
             
             fig.add_trace(
@@ -438,6 +438,8 @@ def main():
     # Calculate global month range from all categories
     all_transactions = filtered_transactions_df.copy()
     all_transactions['date'] = pd.to_datetime(all_transactions['date'])
+    # Ensure the date column is a pandas Series before accessing .dt
+    all_transactions = all_transactions.reset_index(drop=True)
     all_transactions['month'] = all_transactions['date'].dt.to_period('M')
     
     # Get the earliest and latest months from all data
@@ -448,13 +450,13 @@ def main():
     earliest_date = earliest_month.to_timestamp()
     latest_date = latest_month.to_timestamp()
     
-    # Include current month if it's not already in the data
+    # Always include current month, even if there are no transactions
     current_month = pd.Timestamp.now().replace(day=1)
     if current_month > latest_date:
         latest_date = current_month
     
-    # Create global month range
-    global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='ME')
+    # Create global month range using month start frequency to ensure all months are included
+    global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='MS')
     
     st.info(f"Displaying analysis for {len(category_names)} categories (excluding Internal Master Category, Uncategorized, and Credit Card Payments)")
     st.info(f"Date range: {earliest_date.strftime('%Y-%m')} to {latest_date.strftime('%Y-%m')}")
@@ -541,6 +543,9 @@ def main():
         # Reorder columns for better display
         column_order = ['date', 'category', 'category_group', 'amount', 'payee_name', 'memo', 'is_income']
         display_data = display_data[column_order]
+        
+        # Ensure display_data is a proper DataFrame before renaming
+        display_data = pd.DataFrame(display_data)
         
         # Rename columns for better display
         display_data = display_data.rename(columns={
