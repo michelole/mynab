@@ -14,8 +14,8 @@ load_dotenv()
 
 # Page configuration
 st.set_page_config(
-    page_title="YNAB Budget Dashboard",
-    page_icon="��",
+    page_title="Individual Category Analysis - YNAB Dashboard",
+    page_icon="📋",
     layout="wide"
 )
 
@@ -334,7 +334,7 @@ def create_category_plot(category_name, transactions_df, budget_df):
     # Update layout
     fig.update_layout(
         title=f'{category_name} - Comprehensive Analysis',
-        height=600,
+        height=400,
         showlegend=True,
         hovermode='x unified',
         xaxis_title='Month',
@@ -344,124 +344,8 @@ def create_category_plot(category_name, transactions_df, budget_df):
     
     return fig
 
-def create_category_group_summary(transactions_df, budget_df):
-    """Create stacked chart for category groups"""
-    # Filter out transactions with empty category groups, income transactions, and excluded groups
-    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments']
-    filtered_df = transactions_df[
-        (transactions_df['category_group'] != '') & 
-        (~transactions_df['is_income']) & 
-        (~transactions_df['category_group'].isin(excluded_groups))
-    ].copy()
-    
-    if filtered_df.empty:
-        return None
-    
-    # Aggregate by category group and month
-    filtered_df['date'] = pd.to_datetime(filtered_df['date'])
-    filtered_df['month'] = filtered_df['date'].dt.to_period('M')
-    
-    group_monthly = filtered_df.groupby(['category_group', 'month'])['amount'].sum().reset_index()
-    group_monthly['month'] = group_monthly['month'].astype(str)
-    
-    # Create stacked bar chart
-    fig = px.bar(
-        group_monthly,
-        x='month',
-        y='amount',
-        color='category_group',
-        title='Monthly Expenses by Category Group',
-        labels={'amount': 'Amount (€)', 'month': 'Month', 'category_group': 'Category Group'},
-        color_discrete_sequence=px.colors.qualitative.Set3
-    )
-    
-    fig.update_layout(
-        height=500,
-        showlegend=True,
-        hovermode='x unified'
-    )
-    
-    return fig
-
-def create_group_trends_plot(transactions_df, plot_type='moving_average'):
-    """Create trend plots for category groups and total"""
-    # Filter out transactions with empty category groups for expenses and excluded groups
-    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments']
-    expense_df = transactions_df[
-        (transactions_df['category_group'] != '') & 
-        (~transactions_df['is_income']) & 
-        (~transactions_df['category_group'].isin(excluded_groups))
-    ].copy()
-    income_df = transactions_df[transactions_df['is_income']].copy()
-    
-    if expense_df.empty and income_df.empty:
-        return None
-    
-    # Aggregate expenses by category group and month
-    expense_df['date'] = pd.to_datetime(expense_df['date'])
-    expense_df['month'] = expense_df['date'].dt.to_period('M')
-    
-    group_monthly = expense_df.groupby(['category_group', 'month'])['amount'].sum().reset_index()
-    group_monthly['month'] = group_monthly['month'].astype(str)
-    
-    # Add total expenses
-    total_expenses_monthly = expense_df.groupby('month')['amount'].sum().reset_index()
-    total_expenses_monthly['category_group'] = 'Total Expenses'
-    total_expenses_monthly['month'] = total_expenses_monthly['month'].astype(str)
-    
-    # Aggregate income by month
-    income_monthly = pd.DataFrame()
-    if not income_df.empty:
-        income_df['date'] = pd.to_datetime(income_df['date'])
-        income_df['month'] = income_df['date'].dt.to_period('M')
-        income_monthly = income_df.groupby('month')['amount'].sum().reset_index()
-        income_monthly['category_group'] = 'Total Income'
-        income_monthly['month'] = income_monthly['month'].astype(str)
-    
-    # Combine all data
-    all_data = pd.concat([group_monthly, total_expenses_monthly, income_monthly], ignore_index=True)
-    
-    # Create line chart
-    fig = go.Figure()
-    
-    for group in all_data['category_group'].unique():
-        group_data = all_data[all_data['category_group'] == group].sort_values('month')
-        
-        if len(group_data) >= 3:
-            if plot_type == 'moving_average':
-                trend_data = calculate_moving_average(group_data['amount'])
-                title_suffix = '12-Month Moving Average'
-            else:  # forecast_trend
-                trend_line, _ = calculate_forecast_trend(group_data['amount'])
-                trend_data = trend_line
-                title_suffix = '12-Month Forecast Trend'
-            
-            # Use different colors for income vs expenses
-            line_color = '#2ca02c' if group == 'Total Income' else None
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=group_data['month'],
-                    y=trend_data,
-                    name=group,
-                    mode='lines+markers',
-                    line=dict(width=2, color=line_color)
-                )
-            )
-    
-    fig.update_layout(
-        title=f'Category Groups & Income - {title_suffix}',
-        height=500,
-        showlegend=True,
-        hovermode='x unified',
-        xaxis_title='Month',
-        yaxis_title='Amount (€)'
-    )
-    
-    return fig
-
 def main():
-    st.markdown('<h1 class="main-header">💰 YNAB Budget Dashboard</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">📋 Individual Category Analysis</h1>', unsafe_allow_html=True)
     
     # Get API token from environment
     api_token = os.getenv('YNAB_API_KEY')
@@ -494,64 +378,28 @@ def main():
     excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments']
     filtered_transactions_df = transactions_df[~transactions_df['category_group'].isin(excluded_groups)].copy()
     
-    # Display summary metrics
-    col1, col2, col3, col4 = st.columns(4)
+    # Get all category names (excluding the specified groups)
+    category_names = sorted([cat['name'] for cat in categories_data])
     
-    with col1:
-        total_expenses = filtered_transactions_df['amount'].sum()
-        st.metric("Total Expenses", f"€{total_expenses:,.2f}")
+    st.info(f"Displaying analysis for {len(category_names)} categories (excluding Internal Master Category, Uncategorized, and Credit Card Payments)")
     
-    with col2:
-        avg_monthly = filtered_transactions_df.groupby(filtered_transactions_df['date'].dt.to_period('M'))['amount'].sum().mean()
-        st.metric("Avg Monthly Expenses", f"€{avg_monthly:,.2f}")
+    # Display all category plots in a grid
+    st.header("📊 All Category Plots")
     
-    with col3:
-        num_categories = len(categories_data)
-        st.metric("Active Categories", num_categories)
-    
-    with col4:
-        num_transactions = len(filtered_transactions_df)
-        st.metric("Total Transactions", num_transactions)
-    
-    st.markdown("---")
-    
-    # Category Group Summary
-    st.header("📊 Category Group Summary")
-    group_summary_fig = create_category_group_summary(filtered_transactions_df, budget_df)
-    st.plotly_chart(group_summary_fig, use_container_width=True)
-    
-    # Category Group Trends
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📈 Moving Averages by Group")
-        moving_avg_fig = create_group_trends_plot(filtered_transactions_df, 'moving_average')
-        st.plotly_chart(moving_avg_fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("🔮 Forecast Trends by Group")
-        forecast_fig = create_group_trends_plot(filtered_transactions_df, 'forecast_trend')
-        st.plotly_chart(forecast_fig, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # Data tables
-    st.header("📄 Raw Data")
-    
-    tab1, tab2, tab3 = st.tabs(["Transactions", "Budget Data", "Categories"])
-    
-    with tab1:
-        st.dataframe(transactions_df, use_container_width=True)
-    
-    with tab2:
-        if not budget_df.empty:
-            st.dataframe(budget_df, use_container_width=True)
-        else:
-            st.info("No budget data available - using transaction data for analysis")
-    
-    with tab3:
-        categories_df = pd.DataFrame(categories_data)
-        st.dataframe(categories_df, use_container_width=True)
+    # Create a grid layout for the plots
+    cols_per_row = 2
+    for i in range(0, len(category_names), cols_per_row):
+        cols = st.columns(cols_per_row)
+        for j, col in enumerate(cols):
+            if i + j < len(category_names):
+                category_name = category_names[i + j]
+                with col:
+                    st.subheader(category_name)
+                    category_fig = create_category_plot(category_name, filtered_transactions_df, budget_df)
+                    if category_fig:
+                        st.plotly_chart(category_fig, use_container_width=True)
+                    else:
+                        st.info(f"No data available for {category_name}")
 
 if __name__ == "__main__":
     main() 
