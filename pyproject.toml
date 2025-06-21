@@ -1,0 +1,53 @@
+[project]
+name = "mynab"
+version = "0.1.0"
+description = "A comprehensive Streamlit dashboard for analyzing YNAB budget data with advanced visualizations and forecasting capabilities"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.8.1"
+keywords = ["ynab", "budget", "dashboard", "streamlit", "finance"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
+dependencies = [
+    "streamlit>=1.28.0",
+    "ynab>=1.4.0",
+    "pandas>=2.0.0",
+    "plotly>=5.15.0",
+    "numpy>=1.24.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+mynab = "mynab.app:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/ynab-budget-dashboard"
+Repository = "https://github.com/yourusername/ynab-budget-dashboard"
+Documentation = "https://github.com/yourusername/ynab-budget-dashboard#readme"
+Issues = "https://github.com/yourusername/ynab-budget-dashboard/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short" 
