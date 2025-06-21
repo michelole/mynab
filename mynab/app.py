@@ -152,7 +152,7 @@ def process_transactions_data(transactions_response, categories_data):
             
             transactions.append({
                 'date': transaction_date,
-                'amount': abs(transaction.amount) / 1000,  # Convert from millidollars
+                'amount': transaction.amount / 1000,  # Convert from millidollars
                 'category': category_name,
                 'category_group': category_group,
                 'payee_name': transaction.payee_name or "",
