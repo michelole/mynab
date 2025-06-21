@@ -297,7 +297,7 @@ def create_category_plot(category_name, transactions_df, budget_df):
             future_months = pd.date_range(
                 start=monthly_expenses['month_date'].iloc[-1] + pd.DateOffset(months=1),
                 periods=3,
-                freq='M'
+                freq='ME'
             )
             
             fig.add_trace(

@@ -313,7 +313,7 @@ def create_category_plot(category_name, transactions_df, budget_df, global_month
             future_months = pd.date_range(
                 start=complete_monthly_data['month_date'].iloc[-1] + pd.DateOffset(months=1),
                 periods=3,
-                freq='M'
+                freq='ME'
             )
             
             fig.add_trace(
@@ -416,7 +416,7 @@ def main():
         latest_date = current_month
     
     # Create global month range
-    global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='M')
+    global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='ME')
     
     st.info(f"Displaying analysis for {len(category_names)} categories (excluding Internal Master Category, Uncategorized, and Credit Card Payments)")
     st.info(f"Date range: {earliest_date.strftime('%Y-%m')} to {latest_date.strftime('%Y-%m')}")
