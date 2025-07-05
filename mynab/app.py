@@ -323,6 +323,22 @@ def calculate_category_group_averages(group_name, transactions_df, months=3):
     
     return avg_amount
 
+def calculate_category_group_available_budget(group_name, budget_df):
+    """Calculate total available budget for a category group"""
+    if budget_df.empty:
+        return 0
+    
+    # Filter budget data for this category group
+    group_budget = budget_df[budget_df['category_group'] == group_name]
+    
+    if group_budget.empty:
+        return 0
+    
+    # Sum the available amounts for all categories in this group
+    total_available = group_budget['available'].sum()
+    
+    return total_available
+
 def create_category_group_plot(group_name, transactions_df, budget_df, global_month_range, categories_data):
     """Create comprehensive plot for a single category group"""
     # Filter data for this category group
@@ -343,8 +359,11 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
     # Calculate average metrics
     avg_3_months = calculate_category_group_averages(group_name, transactions_df, 3)
     
+    # Calculate available budget for this category group
+    available_budget = calculate_category_group_available_budget(group_name, budget_df)
+    
     # Create metrics row
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         if group_target_amount > 0:
@@ -381,6 +400,22 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
             value=f"€{avg_3_months:,.0f}",
             delta=delta_text_3m,
             delta_color=delta_color_3m
+        )
+    
+    with col3:
+        # Determine color based on available budget
+        if available_budget >= 0:
+            delta_color = "normal"
+            delta_text = "Available"
+        else:
+            delta_color = "inverse"
+            delta_text = "Over budget"
+        
+        st.metric(
+            label="💰 Available Budget",
+            value=f"€{available_budget:,.0f}",
+            delta=delta_text,
+            delta_color=delta_color
         )
     
     # Aggregate transactions by month
