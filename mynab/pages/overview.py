@@ -1,26 +1,12 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-import numpy as np
-from datetime import datetime, timedelta, date
-import os
 from mynab.utils import (
-    get_ynab_data,
-    process_categories_data,
-    process_transactions_data,
-    process_months_data,
     calculate_moving_average,
     calculate_forecast_trend,
-    calculate_category_group_averages,
-    calculate_category_group_available_budget,
     filter_data_by_date_range,
-    safe_strftime,
-    get_default_date_range,
     get_global_month_range,
     get_excluded_groups,
-    get_default_category_groups,
     create_unified_plot,
     calculate_global_y_range,
 )

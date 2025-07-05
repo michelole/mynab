@@ -1,8 +1,5 @@
 import streamlit as st
 import pandas as pd
-from mynab.utils import (
-    get_excluded_groups,
-)
 
 # Page configuration
 st.set_page_config(

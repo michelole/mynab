@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 from mynab.utils import (
     filter_data_by_date_range,
     get_excluded_groups,

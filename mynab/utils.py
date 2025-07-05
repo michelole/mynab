@@ -9,7 +9,6 @@ from ynab.api.budgets_api import BudgetsApi
 from ynab.api.categories_api import CategoriesApi
 from ynab.api.transactions_api import TransactionsApi
 from ynab.api.months_api import MonthsApi
-import os
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -523,13 +522,6 @@ def calculate_global_y_range(
 
     all_y_values = []
 
-    # Get the global month range for consistent data processing
-    global_month_range = pd.date_range(
-        start=transactions_df["date"].min(),
-        end=transactions_df["date"].max(),
-        freq="MS",
-    )
-
     if plot_type == "category" and category_names:
         # Calculate for individual categories
         for category_name in category_names:
@@ -651,7 +643,6 @@ def create_unified_plot(
         plot_type: 'category_group' or 'category'
     """
     import streamlit as st
-    import plotly.graph_objects as go
 
     # Filter data based on plot type
     if plot_type == "category_group":

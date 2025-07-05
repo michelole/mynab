@@ -1,20 +1,11 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-import numpy as np
-from datetime import datetime, timedelta, date
 from mynab.utils import (
-    calculate_moving_average,
-    calculate_forecast_trend,
     calculate_category_averages,
     calculate_category_available_budget,
     filter_data_by_date_range,
-    safe_strftime,
     get_global_month_range,
     get_excluded_groups,
-    get_default_categories,
     create_unified_plot,
     calculate_global_y_range,
 )
@@ -91,7 +82,6 @@ def main():
     transactions_df = st.session_state.transactions_df
     budget_df = st.session_state.budget_df
     categories_data = st.session_state.categories_data
-    category_groups = st.session_state.category_groups
     start_date = st.session_state.start_date
     end_date = st.session_state.end_date
     selected_category_groups = st.session_state.selected_category_groups

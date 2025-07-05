@@ -1,1 +1,1 @@
-# Tests package for YNAB Budget Dashboard 
+# Tests package for YNAB Budget Dashboard

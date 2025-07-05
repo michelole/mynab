@@ -8,8 +8,6 @@ from mynab.utils import (
     process_categories_data,
     process_transactions_data,
     process_months_data,
-    filter_data_by_date_range,
-    safe_strftime,
     get_default_date_range,
     get_excluded_groups,
     get_default_category_groups,
