@@ -373,7 +373,7 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
     return fig
 
 def create_comprehensive_plot(data_type, transactions_df, budget_df, global_month_range):
-    """Create comprehensive plot for total income or total expense"""
+    """Create comprehensive plot for total income, total expense, or total net income"""
     # Filter data based on type
     if data_type == 'total_income':
         filtered_df = transactions_df[
@@ -390,6 +390,12 @@ def create_comprehensive_plot(data_type, transactions_df, budget_df, global_mont
         ].copy()
         title = 'Total Expenses - Comprehensive Analysis'
         color = '#ff7f0e'  # Orange for expenses
+    elif data_type == 'total_net_income':
+        # For net income, we need to calculate monthly income + monthly expenses
+        # We'll process this differently in the aggregation step
+        filtered_df = transactions_df.copy()  # Use all transactions for net income calculation
+        title = 'Total Net Income - Comprehensive Analysis'
+        color = '#1f77b4'  # Blue for net income
     
     if filtered_df.empty:
         return None
@@ -397,8 +403,43 @@ def create_comprehensive_plot(data_type, transactions_df, budget_df, global_mont
     # Aggregate transactions by month
     filtered_df['date'] = pd.to_datetime(filtered_df['date'])
     filtered_df['month'] = filtered_df['date'].dt.to_period('M')
-    monthly_data = filtered_df.groupby('month')['amount'].sum().reset_index()
-    monthly_data['month'] = monthly_data['month'].astype(str)
+    
+    if data_type == 'total_net_income':
+        # For net income, calculate monthly income + monthly expenses
+        # Filter for income transactions
+        income_df = filtered_df[
+            (filtered_df['category'] == 'Inflow: Ready to Assign') & 
+            (filtered_df['payee_name'] != 'Starting Balance')
+        ]
+        
+        # Filter for expense transactions (with category group)
+        expense_df = filtered_df[
+            (filtered_df['category_group'].astype(str) != 'nan') & 
+            (filtered_df['category_group'].astype(str) != '')
+        ]
+        
+        # Group by month and sum
+        monthly_income = income_df.groupby('month')['amount'].sum()
+        monthly_expenses = expense_df.groupby('month')['amount'].sum()
+        
+        # Combine months and calculate net income
+        all_months = pd.concat([monthly_income, monthly_expenses]).index.unique()
+        monthly_net_income = pd.Series(index=all_months, dtype=float)
+        
+        for month in all_months:
+            income_amount = monthly_income.get(month, 0)
+            expense_amount = monthly_expenses.get(month, 0)
+            # Since expenses are already negative in YNAB, we add them to income
+            monthly_net_income[month] = income_amount + expense_amount
+        
+        # Convert to the expected format
+        monthly_data = monthly_net_income.reset_index()
+        monthly_data.columns = ['month', 'amount']
+        monthly_data['month'] = monthly_data['month'].astype(str)
+    else:
+        # For income and expenses, use the original logic
+        monthly_data = filtered_df.groupby('month')['amount'].sum().reset_index()
+        monthly_data['month'] = monthly_data['month'].astype(str)
     
     # Use the global month range
     all_months_df = pd.DataFrame({
@@ -721,8 +762,8 @@ def main():
     # Overview Analysis
     st.header("📊 Overview Analysis")
     
-    # Create two plots in a row for overview
-    col1, col2 = st.columns(2)
+    # Create three plots in a row for overview
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.subheader("💰 Total Income")
@@ -739,6 +780,14 @@ def main():
             st.plotly_chart(expense_fig, use_container_width=True)
         else:
             st.info("No expense data available")
+    
+    with col3:
+        st.subheader("📈 Monthly Net Income")
+        net_income_fig = create_comprehensive_plot('total_net_income', filtered_transactions_df, budget_df, global_month_range)
+        if net_income_fig:
+            st.plotly_chart(net_income_fig, use_container_width=True)
+        else:
+            st.info("No net income data available")
     
     st.markdown("---")
     
