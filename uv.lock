@@ -240,7 +240,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "plotly", specifier = ">=5.15.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "streamlit", specifier = ">=1.28.0" },
+    { name = "streamlit", specifier = "~=1.46.0" },
     { name = "watchdog", specifier = ">=6.0.0" },
     { name = "ynab", specifier = ">=1.4.0" },
 ]

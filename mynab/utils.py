@@ -396,15 +396,12 @@ def get_global_month_range(transactions_df, start_date, end_date):
         
         # Convert to datetime for date_range, handle NaTType
         try:
-            if pd.isna(earliest_month) or pd.isna(latest_month):
-                global_month_range = pd.date_range(start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq='MS')
-                earliest_date = pd.Timestamp(start_date)
-                latest_date = pd.Timestamp(end_date)
-            else:
-                earliest_date = earliest_month.to_timestamp() if hasattr(earliest_month, 'to_timestamp') else pd.Timestamp(start_date)
-                latest_date = latest_month.to_timestamp() if hasattr(latest_month, 'to_timestamp') else pd.Timestamp(end_date)
-                global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='MS')
-        except Exception:
+            # Try to convert periods to timestamps
+            earliest_date = earliest_month.to_timestamp() if hasattr(earliest_month, 'to_timestamp') else pd.Timestamp(start_date)
+            latest_date = latest_month.to_timestamp() if hasattr(latest_month, 'to_timestamp') else pd.Timestamp(end_date)
+            global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='MS')
+        except (AttributeError, ValueError, TypeError):
+            # Fallback to default date range
             global_month_range = pd.date_range(start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq='MS')
             earliest_date = pd.Timestamp(start_date)
             latest_date = pd.Timestamp(end_date)
