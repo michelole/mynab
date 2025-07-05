@@ -1,0 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+- Do not write tests.
+- Do not duplicate code. Prefer to wrap code into functions.
+- Do not end conversations with a summary.
