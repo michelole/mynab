@@ -132,12 +132,18 @@ def test_process_transactions_data():
     # Process data
     df = process_transactions_data(response, categories_data)
 
-    # Check that only expenses (negative amounts) are included
-    assert len(df) == 2
+    # Check that all transactions are included
+    assert len(df) == 3
 
     # Check that amounts are converted from millidollars
-    assert df.iloc[0]["amount"] == 5.0  # -5000 millidollars = €5.00
-    assert df.iloc[1]["amount"] == 2.0  # -2000 millidollars = €2.00
+    assert df.iloc[0]["amount"] == -5.0  # -5000 millidollars = -€5.00
+    assert df.iloc[1]["amount"] == 1.0  # 1000 millidollars = €1.00
+    assert df.iloc[2]["amount"] == -2.0  # -2000 millidollars = -€2.00
+
+    # Check is_income flag
+    assert df.iloc[0]["is_income"] == False
+    assert df.iloc[1]["is_income"] == True
+    assert df.iloc[2]["is_income"] == False
 
 
 if __name__ == "__main__":
