@@ -763,10 +763,15 @@ def main():
     # Sidebar date picker
     st.sidebar.header("📅 Date Range Filter")
     
-    # Calculate default date range (last 12 months)
+    # Calculate default date range (last day of prior month)
     today = date.today()
-    default_start_date = today - timedelta(days=365)
-    default_end_date = today
+    
+    # Get the first day of current month, then subtract 1 day to get last day of prior month
+    first_day_current_month = date(today.year, today.month, 1)
+    last_day_prior_month = first_day_current_month - timedelta(days=1)
+    
+    default_end_date = last_day_prior_month
+    default_start_date = default_end_date - timedelta(days=365)  # 1 year before end date
     
     # Get the actual date range from the data
     if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
@@ -774,9 +779,9 @@ def main():
         data_start_date = filtered_transactions_df['date'].min().date()
         data_end_date = filtered_transactions_df['date'].max().date()
         
-        # Use data range as defaults if available
+        # Use data range as defaults if available, but cap end date to last day of prior month
         default_start_date = data_start_date
-        default_end_date = data_end_date
+        default_end_date = min(data_end_date, default_end_date)
     
     # Date picker in sidebar
     start_date = st.sidebar.date_input(
