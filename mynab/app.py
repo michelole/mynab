@@ -103,94 +103,95 @@ def load_data():
 
 def setup_sidebar():
     """Setup sidebar with filters"""
-    st.sidebar.header("📅 Date Range Filter")
-    
-    # Get default date range
-    default_start_date, default_end_date = get_default_date_range()
-    
-    # Get the actual date range from the data
-    if st.session_state.transactions_df is not None and not st.session_state.transactions_df.empty:
-        filtered_transactions_df = st.session_state.transactions_df.copy()
-        filtered_transactions_df['date'] = pd.to_datetime(filtered_transactions_df['date'])
-        data_start_date = filtered_transactions_df['date'].min().date()
-        data_end_date = filtered_transactions_df['date'].max().date()
+    with st.sidebar:
+        st.header("📅 Date Range Filter")
         
-        # Use data range as defaults if available, but cap end date to last day of prior month
-        default_start_date = data_start_date
-        default_end_date = min(data_end_date, default_end_date)
-    
-    # Date picker in sidebar
-    today = date.today()
-    start_date = st.sidebar.date_input(
-        "Start Date",
-        value=st.session_state.start_date or default_start_date,
-        min_value=date(2010, 1, 1),
-        max_value=today,
-        help="Select the start date for filtering data"
-    )
-    
-    end_date = st.sidebar.date_input(
-        "End Date",
-        value=st.session_state.end_date or default_end_date,
-        min_value=date(2010, 1, 1),
-        max_value=today,
-        help="Select the end date for filtering data"
-    )
-    
-    # Validate date range
-    if start_date > end_date:
-        st.sidebar.error("Start date must be before end date!")
-        return False
-    
-    # Store in session state
-    st.session_state.start_date = start_date
-    st.session_state.end_date = end_date
-    
-    # Category Group Filter in sidebar
-    st.sidebar.header("📊 Category Group Filter")
-    
-    if st.session_state.category_groups is not None:
-        # Get all category group names (excluding the specified groups)
-        excluded_groups = get_excluded_groups()
-        category_group_names = sorted([group for group in st.session_state.category_groups.keys() if group not in excluded_groups])
+        # Get default date range
+        default_start_date, default_end_date = get_default_date_range()
         
-        # Set default values for multiselect
-        default_groups = get_default_category_groups()
-        # Filter default groups to only include those that exist in the data
-        available_defaults = [group for group in default_groups if group in category_group_names]
+        # Get the actual date range from the data
+        if st.session_state.transactions_df is not None and not st.session_state.transactions_df.empty:
+            filtered_transactions_df = st.session_state.transactions_df.copy()
+            filtered_transactions_df['date'] = pd.to_datetime(filtered_transactions_df['date'])
+            data_start_date = filtered_transactions_df['date'].min().date()
+            data_end_date = filtered_transactions_df['date'].max().date()
+            
+            # Use data range as defaults if available, but cap end date to last day of prior month
+            default_start_date = data_start_date
+            default_end_date = min(data_end_date, default_end_date)
         
-        selected_category_groups = st.sidebar.multiselect(
-            "Select category groups to include:",
-            options=category_group_names,
-            default=st.session_state.selected_category_groups or available_defaults,
-            help="Choose which category groups to include in the analysis. Leave empty to show all groups."
+        # Date picker in sidebar
+        today = date.today()
+        start_date = st.date_input(
+            "Start Date",
+            value=st.session_state.start_date or default_start_date,
+            min_value=date(2010, 1, 1),
+            max_value=today,
+            help="Select the start date for filtering data"
         )
         
-        # If no groups are selected, show all groups
-        if not selected_category_groups:
-            selected_category_groups = category_group_names
+        end_date = st.date_input(
+            "End Date",
+            value=st.session_state.end_date or default_end_date,
+            min_value=date(2010, 1, 1),
+            max_value=today,
+            help="Select the end date for filtering data"
+        )
+        
+        # Validate date range
+        if start_date > end_date:
+            st.error("Start date must be before end date!")
+            return False
         
         # Store in session state
-        st.session_state.selected_category_groups = selected_category_groups
+        st.session_state.start_date = start_date
+        st.session_state.end_date = end_date
         
-        # Show date range info in sidebar
-        start_str = safe_strftime(start_date)
-        end_str = safe_strftime(end_date)
-        st.sidebar.info(f"Date range: {start_str} to {end_str}")
-        st.sidebar.info(f"Selected groups: {len(selected_category_groups)} of {len(category_group_names)}")
+        # Category Group Filter in sidebar
+        st.header("📊 Category Group Filter")
         
-        # Count transactions for sidebar info
-        if st.session_state.transactions_df is not None:
-            filtered_df = pd.DataFrame(st.session_state.transactions_df)
-            income_count = len(filtered_df[
-                (filtered_df['category'] == 'Inflow: Ready to Assign') & 
-                (filtered_df['payee_name'] != 'Starting Balance')
-            ])
-            expense_count = len(filtered_df[
-                (filtered_df['category_group'].isin(selected_category_groups)) &
-                (filtered_df['category'] != 'Inflow: Ready to Assign')
-            ])
-            st.sidebar.info(f"📈 {income_count} income + {expense_count} expense transactions")
+        if st.session_state.category_groups is not None:
+            # Get all category group names (excluding the specified groups)
+            excluded_groups = get_excluded_groups()
+            category_group_names = sorted([group for group in st.session_state.category_groups.keys() if group not in excluded_groups])
+            
+            # Set default values for multiselect
+            default_groups = get_default_category_groups()
+            # Filter default groups to only include those that exist in the data
+            available_defaults = [group for group in default_groups if group in category_group_names]
+            
+            selected_category_groups = st.multiselect(
+                "Select category groups to include:",
+                options=category_group_names,
+                default=st.session_state.selected_category_groups or available_defaults,
+                help="Choose which category groups to include in the analysis. Leave empty to show all groups."
+            )
+            
+            # If no groups are selected, show all groups
+            if not selected_category_groups:
+                selected_category_groups = category_group_names
+            
+            # Store in session state
+            st.session_state.selected_category_groups = selected_category_groups
+            
+            # Show date range info in sidebar
+            start_str = safe_strftime(start_date)
+            end_str = safe_strftime(end_date)
+            st.info(f"Date range: {start_str} to {end_str}")
+            st.info(f"Selected groups: {len(selected_category_groups)} of {len(category_group_names)}")
+            
+            # Count transactions for sidebar info
+            if st.session_state.transactions_df is not None:
+                filtered_df = pd.DataFrame(st.session_state.transactions_df)
+                income_count = len(filtered_df[
+                    (filtered_df['category'] == 'Inflow: Ready to Assign') & 
+                    (filtered_df['payee_name'] != 'Starting Balance')
+                ])
+                expense_count = len(filtered_df[
+                    (filtered_df['category_group'].isin(selected_category_groups)) &
+                    (filtered_df['category'] != 'Inflow: Ready to Assign')
+                ])
+                st.info(f"📈 {income_count} income + {expense_count} expense transactions")
     
     return True
 

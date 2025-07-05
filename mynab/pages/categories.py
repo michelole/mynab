@@ -5,13 +5,10 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import numpy as np
 from datetime import datetime, timedelta, date
-import os
 from mynab.utils import (
-    get_ynab_data, process_categories_data, process_transactions_data, process_months_data,
     calculate_moving_average, calculate_forecast_trend, calculate_category_averages,
     calculate_category_available_budget, filter_data_by_date_range, safe_strftime,
-    get_default_date_range, get_global_month_range, get_excluded_groups, get_default_categories,
-    get_default_category_groups
+    get_global_month_range, get_excluded_groups, get_default_categories
 )
 
 # Page configuration
@@ -266,101 +263,30 @@ def create_category_plot(category_name, transactions_df, budget_df, global_month
 def main():
     st.markdown('<h1 class="main-header">📋 Individual Category Analysis</h1>', unsafe_allow_html=True)
     
-    # Get API token from environment
-    api_token = os.getenv('YNAB_API_KEY')
-    
-    if not api_token:
-        st.error("YNAB API key not found in environment variables.")
-        st.info("""
-        Please set your YNAB API key in the .env file:
-        1. Edit the .env file in your project directory
-        2. Replace 'your_ynab_api_token_here' with your actual API token
-        3. Get your API token from YNAB Account Settings > Developer Settings
-        """)
+    # Check if data is loaded in session state
+    if not st.session_state.get('data_loaded', False):
+        st.error("Data not loaded. Please go to the main page first.")
         return
     
-    # Fetch data
-    with st.spinner("Fetching data from YNAB..."):
-        budget_id, budget_name, categories_response, transactions_response, months_response = get_ynab_data(api_token)
+    # Get data from session state
+    transactions_df = st.session_state.transactions_df
+    budget_df = st.session_state.budget_df
+    categories_data = st.session_state.categories_data
+    category_groups = st.session_state.category_groups
+    start_date = st.session_state.start_date
+    end_date = st.session_state.end_date
+    selected_category_groups = st.session_state.selected_category_groups
     
-    if not budget_id:
+    if transactions_df is None or budget_df is None or categories_data is None:
+        st.error("Data not available. Please go to the main page first.")
         return
-    
-    st.success(f"Connected to budget: **{budget_name}**")
-    
-    # Process data
-    categories_data, category_groups = process_categories_data(categories_response)
-    transactions_df = process_transactions_data(transactions_response, categories_data)
-    budget_df = process_months_data(months_response, categories_data)
     
     # Filter out transactions with excluded category groups
     excluded_groups = get_excluded_groups()
     filtered_transactions_df = transactions_df[~transactions_df['category_group'].isin(excluded_groups)].copy()
     
-    # Sidebar filters
-    st.sidebar.header("📅 Date Range Filter")
-    
-    # Get default date range
-    default_start_date, default_end_date = get_default_date_range()
-    
-    # Get the actual date range from the data
-    if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
-        filtered_transactions_df['date'] = pd.to_datetime(filtered_transactions_df['date'])
-        data_start_date = filtered_transactions_df['date'].min().date()
-        data_end_date = filtered_transactions_df['date'].max().date()
-        
-        # Use data range as defaults if available, but cap end date to last day of prior month
-        default_start_date = data_start_date
-        default_end_date = min(data_end_date, default_end_date)
-    
-    # Date picker in sidebar
-    today = date.today()
-    start_date = st.sidebar.date_input(
-        "Start Date",
-        value=default_start_date,
-        min_value=date(2010, 1, 1),
-        max_value=today,
-        help="Select the start date for filtering data"
-    )
-    
-    end_date = st.sidebar.date_input(
-        "End Date",
-        value=default_end_date,
-        min_value=date(2010, 1, 1),
-        max_value=today,
-        help="Select the end date for filtering data"
-    )
-    
-    # Validate date range
-    if start_date > end_date:
-        st.sidebar.error("Start date must be before end date!")
-        return
-    
     # Apply date filtering
     filtered_transactions_df = filter_data_by_date_range(filtered_transactions_df, start_date, end_date)
-    
-    # Category Group Filter in sidebar
-    st.sidebar.header("📊 Category Group Filter")
-    
-    # Get all category group names (excluding the specified groups)
-    excluded_groups = get_excluded_groups()
-    category_group_names = sorted([group for group in category_groups.keys() if group not in excluded_groups])
-    
-    # Set default values for multiselect
-    default_groups = get_default_category_groups()
-    # Filter default groups to only include those that exist in the data
-    available_defaults = [group for group in default_groups if group in category_group_names]
-    
-    selected_category_groups = st.sidebar.multiselect(
-        "Select category groups to include:",
-        options=category_group_names,
-        default=available_defaults,
-        help="Choose which category groups to include in the analysis. Leave empty to show all groups."
-    )
-    
-    # If no groups are selected, show all groups
-    if not selected_category_groups:
-        selected_category_groups = category_group_names
     
     # Filter categories based on selected groups
     filtered_categories_data = [cat for cat in categories_data if cat['group'] in selected_category_groups]
@@ -373,12 +299,6 @@ def main():
     # Filter budget data to only include selected category groups
     if isinstance(budget_df, pd.DataFrame) and not budget_df.empty:
         budget_df = budget_df[budget_df['category_group'].isin(selected_category_groups)].copy()
-    
-    # Show date range info in sidebar
-    start_str = safe_strftime(start_date)
-    end_str = safe_strftime(end_date)
-    st.sidebar.info(f"Date range: {start_str} to {end_str}")
-    st.sidebar.info(f"Selected groups: {len(selected_category_groups)} of {len(category_group_names)}")
     
     # Calculate summary metrics
     def calculate_summary_metrics(categories_data, budget_df, filtered_transactions_df):
