@@ -350,7 +350,7 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
         if group_target_amount > 0:
             # Calculate delta for 3-month average
             delta_3m = avg_3_months - group_target_amount
-            delta_color_3m = "normal" if delta_3m <= 0 else "inverse"
+            delta_color_3m = "normal"
             delta_text_3m = f"€{delta_3m:,.0f} vs target" if delta_3m != 0 else "On target"
             
             st.metric(
@@ -370,7 +370,7 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
             # Calculate delta for 3-month average as percentage
             delta_3m = avg_3_months - group_target_amount
             delta_pct_3m = (delta_3m / group_target_amount) * 100 if group_target_amount > 0 else 0
-            delta_color_3m = "normal" if delta_pct_3m >= 0 else "inverse"
+            delta_color_3m = "inverse"
             delta_text_3m = f"{delta_pct_3m:+.1f}%" if delta_3m != 0 else "On target"
         else:
             delta_text_3m = None
