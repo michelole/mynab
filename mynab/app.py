@@ -313,13 +313,13 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
             group_target_amount += cat['target_amount']
             categories_with_targets.append(cat)
     
-    # Create target goal info text
-    target_info = ""
+    # Create target goal metric card
     if group_target_amount > 0:
-        target_info = f"<br><b>Target Goal: €{group_target_amount:,.0f}</b>"
-        if categories_with_targets:
-            target_info += f" ({len(categories_with_targets)} categories with targets)"
-    
+        st.metric(
+            label="🎯 Target Goal",
+            value=f"€{group_target_amount:,.0f}",
+            # delta=f"{len(categories_with_targets)} categories with targets"
+        )
     # Aggregate transactions by month
     group_transactions['date'] = pd.to_datetime(group_transactions['date'])
     group_transactions['month'] = group_transactions['date'].dt.to_period('M')
@@ -427,7 +427,7 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
     
     # Update layout
     fig.update_layout(
-        title=f'{group_name} - Comprehensive Analysis{target_info}',
+        # title=f'{group_name} - Comprehensive Analysis{target_info}',
         height=400,
         showlegend=False,
         hovermode='x unified',
@@ -875,15 +875,6 @@ def main():
     # Get all category group names (excluding the specified groups)
     category_group_names = sorted([group for group in category_groups.keys() if group not in excluded_groups])
     
-    st.info(f"Displaying analysis for {len(category_group_names)} category groups (excluding Internal Master Category, Uncategorized, Credit Card Payments, and Hidden Categories)")
-    try:
-        st.info(f"Date range: {earliest_date.strftime('%Y-%m')} to {latest_date.strftime('%Y-%m')}")
-    except (AttributeError, ValueError):
-        st.info("Date range: Unable to determine")
-    
-    # Category group filter
-    st.subheader("🔍 Category Group Filter")
-    
     # Set default values for multiselect
     default_groups = ["Lazer", "Necessidades"]
     # Filter default groups to only include those that exist in the data
@@ -899,12 +890,6 @@ def main():
     # If no groups are selected, show all groups
     if not selected_category_groups:
         selected_category_groups = category_group_names
-        st.info("Showing all category groups (no filter applied)")
-    else:
-        st.success(f"Showing {len(selected_category_groups)} selected category groups")
-    
-    # Display all category group plots in a grid
-    st.subheader("📈 All Category Group Plots")
     
     # Create a grid layout for the plots
     cols_per_row = 2
