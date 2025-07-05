@@ -376,7 +376,10 @@ def create_comprehensive_plot(data_type, transactions_df, budget_df, global_mont
     """Create comprehensive plot for total income or total expense"""
     # Filter data based on type
     if data_type == 'total_income':
-        filtered_df = transactions_df[transactions_df['is_income']].copy()
+        filtered_df = transactions_df[
+            (transactions_df['category'] == 'Inflow: Ready to Assign') & 
+            (transactions_df['payee_name'] != 'Starting Balance')
+        ].copy()
         title = 'Total Income - Comprehensive Analysis'
         color = '#2ca02c'  # Green for income
     elif data_type == 'total_expense':
@@ -614,7 +617,10 @@ def main():
         st.metric("Total Expenses", f"€{total_expenses:,.2f}")
     
     with col2:
-        total_income = filtered_transactions_df[filtered_transactions_df['is_income']]['amount'].sum()
+        total_income = filtered_transactions_df[
+            (filtered_transactions_df['category'] == 'Inflow: Ready to Assign') & 
+            (filtered_transactions_df['payee_name'] != 'Starting Balance')
+        ]['amount'].sum()
         st.metric("Total Income", f"€{total_income:,.2f}")
     
     with col3:
