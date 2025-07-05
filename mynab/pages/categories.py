@@ -598,7 +598,7 @@ def main():
     excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments', 'Hidden Categories']
     filtered_transactions_df = transactions_df[~transactions_df['category_group'].isin(excluded_groups)].copy()
     
-    # Sidebar date picker
+    # Sidebar filters
     st.sidebar.header("📅 Date Range Filter")
     
     # Calculate default date range (last day of prior month)
@@ -646,6 +646,41 @@ def main():
     # Apply date filtering
     filtered_transactions_df = filter_data_by_date_range(filtered_transactions_df, start_date, end_date)
     
+    # Category Group Filter in sidebar
+    st.sidebar.header("📊 Category Group Filter")
+    
+    # Get all category group names (excluding the specified groups)
+    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments', 'Hidden Categories']
+    category_group_names = sorted([group for group in category_groups.keys() if group not in excluded_groups])
+    
+    # Set default values for multiselect
+    default_groups = ["Lazer", "Necessidades"]
+    # Filter default groups to only include those that exist in the data
+    available_defaults = [group for group in default_groups if group in category_group_names]
+    
+    selected_category_groups = st.sidebar.multiselect(
+        "Select category groups to include:",
+        options=category_group_names,
+        default=available_defaults,
+        help="Choose which category groups to include in the analysis. Leave empty to show all groups."
+    )
+    
+    # If no groups are selected, show all groups
+    if not selected_category_groups:
+        selected_category_groups = category_group_names
+    
+    # Filter categories based on selected groups
+    filtered_categories_data = [cat for cat in categories_data if cat['group'] in selected_category_groups]
+    filtered_category_names = [cat['name'] for cat in filtered_categories_data]
+    
+    # Filter transactions to only include selected category groups
+    if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
+        filtered_transactions_df = filtered_transactions_df[filtered_transactions_df['category_group'].isin(selected_category_groups)].copy()
+    
+    # Filter budget data to only include selected category groups
+    if isinstance(budget_df, pd.DataFrame) and not budget_df.empty:
+        budget_df = budget_df[budget_df['category_group'].isin(selected_category_groups)].copy()
+    
     # Show date range info in sidebar
     # Safely handle earliest_date/latest_date for info display
     def safe_strftime(dt):
@@ -657,7 +692,108 @@ def main():
             return str(dt)
     start_str = safe_strftime(start_date)
     end_str = safe_strftime(end_date)
-    st.info(f"Date range: {start_str} to {end_str}")
+    st.sidebar.info(f"Date range: {start_str} to {end_str}")
+    st.sidebar.info(f"Selected groups: {len(selected_category_groups)} of {len(category_group_names)}")
+    
+    # Calculate summary metrics
+    def calculate_summary_metrics(categories_data, budget_df, filtered_transactions_df):
+        """Calculate summary metrics for all categories"""
+        # Total target budget
+        total_target_budget = sum(
+            cat.get('target_amount', 0) or 0 
+            for cat in categories_data 
+            if cat.get('target_amount') is not None
+        )
+        
+        # Total available budget
+        total_available_budget = budget_df['available'].sum() if not budget_df.empty else 0
+        
+        # Last 12 months average for all transactions
+        if not filtered_transactions_df.empty:
+            # Use all transactions (both income and expenses)
+            all_transactions_df = filtered_transactions_df.copy()
+            all_transactions_df['date'] = pd.to_datetime(all_transactions_df['date'])
+            all_transactions_df['month'] = all_transactions_df['date'].dt.to_period('M')
+            monthly_totals = all_transactions_df.groupby('month')['amount'].sum()
+            if len(monthly_totals) >= 12:
+                last_12_months_avg = abs(monthly_totals.tail(12).mean())
+            else:
+                last_12_months_avg = abs(monthly_totals.mean()) if not monthly_totals.empty else 0
+        else:
+            last_12_months_avg = 0
+        
+        # Sum of suggested budgets
+        total_suggested_budget = 0
+        for cat in categories_data:
+            category_name = cat['name']
+            avg_12_months = calculate_category_averages(category_name, filtered_transactions_df, 12)
+            available_budget = calculate_category_available_budget(category_name, budget_df)
+            suggested_budget = -(available_budget - (avg_12_months * 12)) / 12
+            total_suggested_budget += suggested_budget
+        
+        return total_target_budget, total_available_budget, last_12_months_avg, total_suggested_budget
+    
+    # Calculate summary metrics
+    total_target, total_available, last_12m_avg, total_suggested = calculate_summary_metrics(
+        filtered_categories_data, budget_df, filtered_transactions_df
+    )
+    
+    # Display summary metrics at the top
+    st.header("📊 Summary Metrics")
+    
+    # Create metrics in a 2x2 grid (matching individual category order)
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Target Budget - no delta for total target
+        st.metric(
+            label="🎯 Total Target Budget",
+            value=f"€{total_target:,.0f}",
+            help="Sum of all category target budgets"
+        )
+        
+        # Last 12 Months Average - delta as percentage vs target
+        if total_target > 0:
+            delta_12m = last_12m_avg - total_target
+            delta_pct_12m = (delta_12m / total_target) * 100 if total_target > 0 else 0
+            delta_text_12m = f"{delta_pct_12m:+.1f}%" if delta_12m != 0 else "On target"
+            delta_color_12m = "inverse"
+        else:
+            delta_text_12m = None
+            delta_color_12m = "normal"
+        
+        st.metric(
+            label="📊 Last 12 Months Average",
+            value=f"€{last_12m_avg:,.0f}",
+            delta=delta_text_12m,
+            delta_color=delta_color_12m,
+            help="Average monthly expenses over the last 12 months"
+        )
+    
+    with col2:
+        # Available Budget - no delta
+        st.metric(
+            label="💰 Total Available Budget",
+            value=f"€{total_available:,.0f}",
+            help="Sum of all category available budgets"
+        )
+        
+        # Suggested Budget - delta as percentage vs target
+        if total_target > 0:
+            delta_ratio = ((total_suggested - total_target) / total_target) * 100
+            delta_text = f"{delta_ratio:+.1f}%"
+            delta_color = "inverse"
+        else:
+            delta_text = None
+            delta_color = "inverse"
+        
+        st.metric(
+            label="💡 Total Suggested Budget",
+            value=f"€{total_suggested:,.0f}",
+            delta=delta_text,
+            delta_color=delta_color,
+            help="Sum of all category suggested budgets"
+        )
     
     # Calculate global month range from filtered data
     if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
@@ -682,9 +818,6 @@ def main():
         earliest_date = pd.Timestamp(start_date)
         latest_date = pd.Timestamp(end_date)
     
-    # Get all category names in the order received from the API (excluding the specified groups)
-    category_names = [cat['name'] for cat in categories_data]
-    
     # Safely handle earliest_date/latest_date for info display
     start_str = safe_strftime(earliest_date)
     end_str = safe_strftime(latest_date)
@@ -695,19 +828,19 @@ def main():
     
     # Set default values for multiselect
     default_categories = ["Groceries", "Dining Out", "Transportation"]
-    # Filter default categories to only include those that exist in the data
-    available_defaults = [cat for cat in default_categories if cat in category_names]
+    # Filter default categories to only include those that exist in the filtered data
+    available_defaults = [cat for cat in default_categories if cat in filtered_category_names]
     
     selected_categories = st.multiselect(
         "Select categories to display:",
-        options=category_names,
+        options=filtered_category_names,
         default=available_defaults,
-        help="Choose which categories to include in the analysis. Leave empty to show all categories."
+        help="Choose which categories to include in the analysis. Leave empty to show all categories from selected groups."
     )
     
-    # If no categories are selected, show all categories
+    # If no categories are selected, show all categories from selected groups
     if not selected_categories:
-        selected_categories = category_names
+        selected_categories = filtered_category_names
     
     # Create a grid layout for the plots
     cols_per_row = 2
@@ -735,7 +868,7 @@ def main():
     
     with filter_col1:
         # Add "All Categories" option (categories are already in API order)
-        all_categories_option = ["All Categories"] + category_names
+        all_categories_option = ["All Categories"] + filtered_category_names
         selected_category = st.selectbox(
             "Select Category to Filter:",
             options=all_categories_option,
