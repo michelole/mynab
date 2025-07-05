@@ -296,13 +296,29 @@ def calculate_forecast_trend(data, periods=3):
     
     return pd.Series(trend_line, index=data.index), pd.Series(forecast, index=future_x)
 
-def create_category_group_plot(group_name, transactions_df, budget_df, global_month_range):
+def create_category_group_plot(group_name, transactions_df, budget_df, global_month_range, categories_data):
     """Create comprehensive plot for a single category group"""
     # Filter data for this category group
     group_transactions = transactions_df[transactions_df['category_group'] == group_name].copy()
     
     if group_transactions.empty:
         return None
+    
+    # Calculate total target goal for this category group
+    group_target_amount = 0
+    categories_with_targets = []
+    
+    for cat in categories_data:
+        if cat['group'] == group_name and cat.get('target_amount') is not None:
+            group_target_amount += cat['target_amount']
+            categories_with_targets.append(cat)
+    
+    # Create target goal info text
+    target_info = ""
+    if group_target_amount > 0:
+        target_info = f"<br><b>Target Goal: €{group_target_amount:,.0f}</b>"
+        if categories_with_targets:
+            target_info += f" ({len(categories_with_targets)} categories with targets)"
     
     # Aggregate transactions by month
     group_transactions['date'] = pd.to_datetime(group_transactions['date'])
@@ -389,10 +405,29 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
                     mode='lines'
                 )
             )
+        
+        # Add target goal line if available
+        if group_target_amount > 0:
+            # Create a horizontal line across all months
+            all_months = complete_monthly_data['month'].tolist()
+            if len(complete_monthly_data) >= 3 and 'future_months' in locals():
+                # Include future months in the target line
+                future_month_strs = future_months.strftime('%Y-%m').tolist()
+                all_months.extend(future_month_strs)
+            
+            fig.add_trace(
+                go.Scatter(
+                    x=all_months,
+                    y=[group_target_amount] * len(all_months),
+                    name=f'Target Goal (€{group_target_amount:,.0f})',
+                    line=dict(color='#2ca02c', width=3, dash='solid'),
+                    mode='lines'
+                )
+            )
     
     # Update layout
     fig.update_layout(
-        title=f'{group_name} - Comprehensive Analysis',
+        title=f'{group_name} - Comprehensive Analysis{target_info}',
         height=400,
         showlegend=True,
         hovermode='x unified',
@@ -772,7 +807,7 @@ def main():
                 monthly_expenses = expense_transactions.groupby(expense_transactions['date'].dt.to_period('M'))['amount'].sum()
                 
                 # Combine months and calculate net income
-                all_months = pd.concat([monthly_income, monthly_expenses]).index.unique()
+                all_months = monthly_income.index.union(monthly_expenses.index)
                 monthly_net_income = pd.Series(index=all_months, dtype=float)
                 
                 for month in all_months:
@@ -829,7 +864,10 @@ def main():
     category_group_names = sorted([group for group in category_groups.keys() if group not in excluded_groups])
     
     st.info(f"Displaying analysis for {len(category_group_names)} category groups (excluding Internal Master Category, Uncategorized, and Credit Card Payments)")
-    st.info(f"Date range: {earliest_date.strftime('%Y-%m')} to {latest_date.strftime('%Y-%m')}")
+    try:
+        st.info(f"Date range: {earliest_date.strftime('%Y-%m')} to {latest_date.strftime('%Y-%m')}")
+    except (AttributeError, ValueError):
+        st.info("Date range: Unable to determine")
     
     # Display all category group plots in a grid
     st.subheader("📈 All Category Group Plots")
@@ -843,7 +881,7 @@ def main():
                 group_name = category_group_names[i + j]
                 with col:
                     st.subheader(group_name)
-                    group_fig = create_category_group_plot(group_name, filtered_transactions_df, budget_df, global_month_range)
+                    group_fig = create_category_group_plot(group_name, filtered_transactions_df, budget_df, global_month_range, categories_data)
                     if group_fig:
                         st.plotly_chart(group_fig, use_container_width=True)
                     else:
