@@ -1,5 +1,10 @@
 import streamlit as st
-import ynab
+from ynab.configuration import Configuration
+from ynab.api_client import ApiClient
+from ynab.api.budgets_api import BudgetsApi
+from ynab.api.categories_api import CategoriesApi
+from ynab.api.transactions_api import TransactionsApi
+from ynab.api.months_api import MonthsApi
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
@@ -49,10 +54,10 @@ st.markdown("""
 def get_ynab_data(access_token):
     """Fetch data from YNAB API"""
     try:
-        configuration = ynab.Configuration(access_token=access_token)
-        with ynab.ApiClient(configuration) as api_client:
+        configuration = Configuration(access_token=access_token)
+        with ApiClient(configuration) as api_client:
             # Get budgets
-            budgets_api = ynab.BudgetsApi(api_client)
+            budgets_api = BudgetsApi(api_client)
             budgets_response = budgets_api.get_budgets()
             
             if not budgets_response.data.budgets:
@@ -63,11 +68,11 @@ def get_ynab_data(access_token):
             budget_name = budgets_response.data.budgets[0].name
             
             # Get categories
-            categories_api = ynab.CategoriesApi(api_client)
+            categories_api = CategoriesApi(api_client)
             categories_response = categories_api.get_categories(budget_id)
             
             # Get transactions for the last 24 months
-            transactions_api = ynab.TransactionsApi(api_client)
+            transactions_api = TransactionsApi(api_client)
             
             # Calculate date range (last 24 months)
             end_date = datetime.now()
@@ -75,12 +80,12 @@ def get_ynab_data(access_token):
             
             transactions_response = transactions_api.get_transactions(
                 budget_id,
-                since_date=start_date.strftime('%Y-%m-%d')
+                since_date=start_date.date()
             )
             
             # Get current month budget data for categories
-            months_api = ynab.MonthsApi(api_client)
-            current_month = datetime.now().strftime('%Y-%m-01')  # Use first day of current month
+            months_api = MonthsApi(api_client)
+            current_month = datetime.now().replace(day=1).date()  # Use first day of current month
             months_response = months_api.get_budget_month(budget_id, current_month)
             
             return budget_id, budget_name, categories_response, transactions_response, months_response
@@ -108,11 +113,28 @@ def process_categories_data(categories_response):
         
         for category in group.categories:
             if not category.hidden and not category.deleted:
+                # Extract target/goal information
+                target_amount = None
+                target_type = None
+                target_date = None
+                
+                if hasattr(category, 'goal_target') and category.goal_target:
+                    target_amount = category.goal_target / 1000  # Convert from millidollars
+                
+                if hasattr(category, 'goal_type') and category.goal_type:
+                    target_type = category.goal_type
+                
+                if hasattr(category, 'goal_target_month') and category.goal_target_month:
+                    target_date = category.goal_target_month
+                
                 category_data = {
                     'id': category.id,
                     'name': category.name,
                     'group': group_name,
-                    'category_group_id': group.id
+                    'category_group_id': group.id,
+                    'target_amount': target_amount,
+                    'target_type': target_type,
+                    'target_date': target_date
                 }
                 categories_data.append(category_data)
                 category_groups[group_name].append(category_data)
@@ -217,14 +239,20 @@ def process_months_data(months_response, categories_data):
         if hasattr(month_data, 'categories'):
             for category in month_data.categories:
                 if category.budgeted != 0 or category.activity != 0:
-                    # Find category name
+                    # Find category name and target information
                     category_name = "Uncategorized"
                     category_group = "Uncategorized"
+                    target_amount = None
+                    target_type = None
+                    target_date = None
                     
                     for cat in categories_data:
                         if cat['id'] == category.id:
                             category_name = cat['name']
                             category_group = cat['group']
+                            target_amount = cat.get('target_amount')
+                            target_type = cat.get('target_type')
+                            target_date = cat.get('target_date')
                             break
                     
                     budget_data.append({
@@ -232,7 +260,10 @@ def process_months_data(months_response, categories_data):
                         'category_group': category_group,
                         'budgeted': category.budgeted / 1000,  # Convert from millidollars
                         'activity': category.activity / 1000,  # Convert from millidollars
-                        'available': category.balance / 1000   # Convert from millidollars
+                        'available': category.balance / 1000,   # Convert from millidollars
+                        'target_amount': target_amount,
+                        'target_type': target_type,
+                        'target_date': target_date
                     })
     
     df = pd.DataFrame(budget_data)
@@ -649,6 +680,13 @@ def main():
     col1, col2, col3 = st.columns(3)
     
     with col1:
+        total_income = filtered_transactions_df[
+            (filtered_transactions_df['category'] == 'Inflow: Ready to Assign') & 
+            (filtered_transactions_df['payee_name'] != 'Starting Balance')
+        ]['amount'].sum()
+        st.metric("Total Income", f"€{total_income:,.2f}")
+    
+    with col2:
         # Include only transactions with a category group
         transactions_with_category = filtered_transactions_df[
             (filtered_transactions_df['category_group'].astype(str) != 'nan') & 
@@ -656,13 +694,6 @@ def main():
         ]
         total_expenses = transactions_with_category['amount'].sum()
         st.metric("Total Expenses", f"€{total_expenses:,.2f}")
-    
-    with col2:
-        total_income = filtered_transactions_df[
-            (filtered_transactions_df['category'] == 'Inflow: Ready to Assign') & 
-            (filtered_transactions_df['payee_name'] != 'Starting Balance')
-        ]['amount'].sum()
-        st.metric("Total Income", f"€{total_income:,.2f}")
     
     with col3:
         # Calculate total net income (income - expenses)
@@ -674,6 +705,27 @@ def main():
     col4, col5, col6 = st.columns(3)
     
     with col4:
+        # Calculate average monthly income
+        if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
+            # Filter for income transactions
+            income_transactions = filtered_transactions_df[
+                (filtered_transactions_df['category'] == 'Inflow: Ready to Assign') & 
+                (filtered_transactions_df['payee_name'] != 'Starting Balance')
+            ].copy()
+            
+            if not income_transactions.empty:
+                # Ensure date column is properly converted to datetime
+                income_transactions['date'] = pd.to_datetime(income_transactions['date'])
+                # Group by month and calculate average
+                monthly_income = income_transactions.groupby(income_transactions['date'].dt.to_period('M'))['amount'].sum()
+                avg_monthly_income = monthly_income.mean()
+                st.metric("Avg Monthly Income", f"€{avg_monthly_income:,.2f}")
+            else:
+                st.metric("Avg Monthly Income", "€0.00")
+        else:
+            st.metric("Avg Monthly Income", "€0.00")
+    
+    with col5:
         # Create a copy for calculations to avoid modifying the original
         if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
             calc_df = filtered_transactions_df.copy()
@@ -694,27 +746,6 @@ def main():
                 st.metric("Avg Monthly Expenses", "€0.00")
         else:
             st.metric("Avg Monthly Expenses", "€0.00")
-    
-    with col5:
-        # Calculate average monthly income
-        if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
-            # Filter for income transactions
-            income_transactions = filtered_transactions_df[
-                (filtered_transactions_df['category'] == 'Inflow: Ready to Assign') & 
-                (filtered_transactions_df['payee_name'] != 'Starting Balance')
-            ].copy()
-            
-            if not income_transactions.empty:
-                # Ensure date column is properly converted to datetime
-                income_transactions['date'] = pd.to_datetime(income_transactions['date'])
-                # Group by month and calculate average
-                monthly_income = income_transactions.groupby(income_transactions['date'].dt.to_period('M'))['amount'].sum()
-                avg_monthly_income = monthly_income.mean()
-                st.metric("Avg Monthly Income", f"€{avg_monthly_income:,.2f}")
-            else:
-                st.metric("Avg Monthly Income", "€0.00")
-        else:
-            st.metric("Avg Monthly Income", "€0.00")
     
     with col6:
         # Calculate average monthly net income
@@ -854,6 +885,28 @@ def main():
     
     with tab3:
         categories_df = pd.DataFrame(categories_data)
+        
+        # Add a summary of categories with targets
+        if not categories_df.empty and 'target_amount' in categories_df.columns:
+            categories_with_targets = categories_df[categories_df['target_amount'].notna()]
+            if not categories_with_targets.empty:
+                st.subheader("🎯 Categories with Targets")
+                st.info(f"Found {len(categories_with_targets)} categories with target values")
+                
+                # Display target summary
+                target_summary = categories_with_targets[['name', 'group', 'target_amount', 'target_type', 'target_date']].copy()
+                target_summary = target_summary.rename(columns={
+                    'name': 'Category',
+                    'group': 'Category Group',
+                    'target_amount': 'Target Amount (€)',
+                    'target_type': 'Target Type',
+                    'target_date': 'Target Date'
+                })
+                st.dataframe(target_summary, use_container_width=True)
+                
+                st.markdown("---")
+        
+        st.subheader("📋 All Categories")
         st.dataframe(categories_df, use_container_width=True)
 
 if __name__ == "__main__":
