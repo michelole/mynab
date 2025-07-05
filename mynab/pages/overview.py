@@ -264,7 +264,10 @@ if not selected_category_groups:
     )
     selected_category_groups = category_group_names
 
-# Filter transactions to only include selected category groups (but preserve income transactions)
+# Get selected categories from session state
+selected_categories = st.session_state.get("selected_categories", [])
+
+# Filter transactions to only include selected category groups and categories (but preserve income transactions)
 if (
     isinstance(filtered_transactions_df, pd.DataFrame)
     and not filtered_transactions_df.empty
@@ -275,9 +278,10 @@ if (
         & (filtered_transactions_df["payee_name"] != "Starting Balance")
     ].copy()
 
-    # Filter expense transactions by selected category groups
+    # Filter expense transactions by selected category groups and categories
     expense_transactions = filtered_transactions_df[
         (filtered_transactions_df["category_group"].isin(selected_category_groups))
+        & (filtered_transactions_df["category"].isin(selected_categories))
         & (filtered_transactions_df["category"] != "Inflow: Ready to Assign")
     ].copy()
 
@@ -286,14 +290,15 @@ if (
         [income_transactions, expense_transactions], ignore_index=True
     )
 
-# Filter budget data to only include selected category groups
+# Filter budget data to only include selected category groups and categories
 if (
     budget_df is not None
     and isinstance(budget_df, pd.DataFrame)
     and not budget_df.empty
 ):
     budget_df = budget_df[
-        budget_df["category_group"].isin(selected_category_groups)
+        (budget_df["category_group"].isin(selected_category_groups))
+        & (budget_df["category"].isin(selected_categories))
     ].copy()
 
 # Calculate global month range from original data (before category filtering)

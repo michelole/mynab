@@ -104,29 +104,37 @@ def main():
         filtered_transactions_df, start_date, end_date
     )
 
-    # Filter categories based on selected groups
+    # Get selected categories from session state
+    selected_categories = st.session_state.get("selected_categories", [])
+
+    # Filter categories based on selected groups and selected categories
     filtered_categories_data = [
-        cat for cat in categories_data if cat["group"] in selected_category_groups
+        cat
+        for cat in categories_data
+        if cat["group"] in selected_category_groups
+        and cat["name"] in selected_categories
     ]
     filtered_category_names = [cat["name"] for cat in filtered_categories_data]
 
-    # Filter transactions to only include selected category groups
+    # Filter transactions to only include selected category groups and categories
     if (
         isinstance(filtered_transactions_df, pd.DataFrame)
         and not filtered_transactions_df.empty
     ):
         filtered_transactions_df = filtered_transactions_df[
-            filtered_transactions_df["category_group"].isin(selected_category_groups)
+            (filtered_transactions_df["category_group"].isin(selected_category_groups))
+            & (filtered_transactions_df["category"].isin(selected_categories))
         ].copy()
 
-    # Filter budget data to only include selected category groups
+    # Filter budget data to only include selected category groups and categories
     if (
         budget_df is not None
         and isinstance(budget_df, pd.DataFrame)
         and not budget_df.empty
     ):
         budget_df = budget_df[
-            budget_df["category_group"].isin(selected_category_groups)
+            (budget_df["category_group"].isin(selected_category_groups))
+            & (budget_df["category"].isin(selected_categories))
         ].copy()
 
     # Calculate summary metrics
@@ -249,34 +257,16 @@ def main():
         filtered_transactions_df, start_date, end_date
     )
 
-    # Category selection
+    # Category Analysis
     st.header("📊 Category Analysis")
-
-    # Set default values for multiselect
-    default_categories = get_default_categories()
-    # Filter default categories to only include those that exist in the filtered data
-    available_defaults = [
-        cat for cat in default_categories if cat in filtered_category_names
-    ]
-
-    selected_categories = st.multiselect(
-        "Select categories to display:",
-        options=filtered_category_names,
-        default=available_defaults,
-        help="Choose which categories to include in the analysis. Leave empty to show all categories from selected groups.",
-    )
-
-    # If no categories are selected, show all categories from selected groups
-    if not selected_categories:
-        selected_categories = filtered_category_names
 
     # Create a grid layout for the plots
     cols_per_row = 2
-    for i in range(0, len(selected_categories), cols_per_row):
+    for i in range(0, len(filtered_category_names), cols_per_row):
         cols = st.columns(cols_per_row)
         for j, col in enumerate(cols):
-            if i + j < len(selected_categories):
-                category_name = selected_categories[i + j]
+            if i + j < len(filtered_category_names):
+                category_name = filtered_category_names[i + j]
                 with col:
                     st.subheader(category_name)
                     category_fig = create_category_plot(

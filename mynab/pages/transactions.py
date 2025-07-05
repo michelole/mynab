@@ -73,40 +73,21 @@ def main():
         filtered_transactions_df, start_date, end_date
     )
 
-    # Filter transactions to only include selected category groups
+    # Get selected categories from session state
+    selected_categories = st.session_state.get("selected_categories", [])
+
+    # Filter transactions to only include selected category groups and categories
     if (
         isinstance(filtered_transactions_df, pd.DataFrame)
         and not filtered_transactions_df.empty
     ):
         filtered_transactions_df = filtered_transactions_df[
-            filtered_transactions_df["category_group"].isin(selected_category_groups)
+            (filtered_transactions_df["category_group"].isin(selected_category_groups))
+            & (filtered_transactions_df["category"].isin(selected_categories))
         ].copy()
 
-    # Add category filter
-    if (
-        isinstance(filtered_transactions_df, pd.DataFrame)
-        and not filtered_transactions_df.empty
-        and "category" in filtered_transactions_df.columns
-    ):
-        # Get unique categories for the selectbox (from filtered data)
-        unique_categories = ["All Categories"] + sorted(
-            filtered_transactions_df["category"].unique().tolist()
-        )
-        selected_category = st.selectbox(
-            "Filter by Category:", options=unique_categories, index=0
-        )
-
-        # Filter dataframe based on selection
-        if selected_category == "All Categories":
-            display_df = filtered_transactions_df
-        else:
-            display_df = filtered_transactions_df[
-                filtered_transactions_df["category"] == selected_category
-            ]
-
-        st.dataframe(display_df, use_container_width=True)
-    else:
-        st.dataframe(filtered_transactions_df, use_container_width=True)
+    # Display filtered transactions
+    st.dataframe(filtered_transactions_df, use_container_width=True)
 
 
 if __name__ == "__main__":

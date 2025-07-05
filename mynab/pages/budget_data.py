@@ -58,14 +58,18 @@ def main():
         st.error("Data not available. Please go to the main page first.")
         return
 
-    # Filter budget data to only include selected category groups
+    # Get selected categories from session state
+    selected_categories = st.session_state.get("selected_categories", [])
+
+    # Filter budget data to only include selected category groups and categories
     if (
         budget_df is not None
         and isinstance(budget_df, pd.DataFrame)
         and not budget_df.empty
     ):
         budget_df = budget_df[
-            budget_df["category_group"].isin(selected_category_groups)
+            (budget_df["category_group"].isin(selected_category_groups))
+            & (budget_df["category"].isin(selected_categories))
         ].copy()
 
     if budget_df is not None and not budget_df.empty:

@@ -13,6 +13,7 @@ from mynab.utils import (
     get_default_date_range,
     get_excluded_groups,
     get_default_category_groups,
+    get_default_categories,
 )
 
 # Page configuration
@@ -58,6 +59,8 @@ def initialize_session_state():
         st.session_state.end_date = None
     if "selected_category_groups" not in st.session_state:
         st.session_state.selected_category_groups = []
+    if "selected_categories" not in st.session_state:
+        st.session_state.selected_categories = []
     if "transactions_df" not in st.session_state:
         st.session_state.transactions_df = None
     if "budget_df" not in st.session_state:
@@ -204,6 +207,47 @@ def setup_sidebar():
 
             # Store in session state
             st.session_state.selected_category_groups = selected_category_groups
+
+            # Category Filter in sidebar
+            st.header("📋 Category Filter")
+
+            # Get categories from selected category groups
+            available_categories = []
+            for group_name in selected_category_groups:
+                if group_name in st.session_state.category_groups:
+                    for category in st.session_state.category_groups[group_name]:
+                        available_categories.append(category["name"])
+
+            # Sort categories alphabetically
+            available_categories = sorted(available_categories)
+
+            # Set default values for category multiselect
+            default_categories = get_default_categories()
+            # Filter default categories to only include those that exist in the available categories
+            available_default_categories = [
+                cat for cat in default_categories if cat in available_categories
+            ]
+
+            # Filter current selected categories to only include those that are still available
+            current_selected_categories = [
+                cat
+                for cat in st.session_state.selected_categories
+                if cat in available_categories
+            ]
+
+            selected_categories = st.multiselect(
+                "Select categories to include:",
+                options=available_categories,
+                default=current_selected_categories or available_default_categories,
+                help="Choose which categories to include in the analysis. Leave empty to show all categories from selected groups.",
+            )
+
+            # If no categories are selected, show all categories from selected groups
+            if not selected_categories:
+                selected_categories = available_categories
+
+            # Store in session state
+            st.session_state.selected_categories = selected_categories
 
     return True
 
