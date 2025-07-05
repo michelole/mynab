@@ -389,7 +389,7 @@ def create_category_plot(category_name, transactions_df, budget_df, global_month
     fig.update_layout(
         title=f'{category_name} - Comprehensive Analysis',
         height=400,
-        showlegend=True,
+        showlegend=False,
         hovermode='x unified',
         xaxis_title='Month',
         yaxis_title='Amount (€)',

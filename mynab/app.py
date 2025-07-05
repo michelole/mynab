@@ -429,7 +429,7 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
     fig.update_layout(
         title=f'{group_name} - Comprehensive Analysis{target_info}',
         height=400,
-        showlegend=True,
+        showlegend=False,
         hovermode='x unified',
         xaxis_title='Month',
         yaxis_title='Amount (€)',
@@ -597,7 +597,7 @@ def create_comprehensive_plot(data_type, transactions_df, budget_df, global_mont
     fig.update_layout(
         title=title,
         height=500,
-        showlegend=True,
+        showlegend=False,
         hovermode='x unified',
         xaxis_title='Month',
         yaxis_title='Amount (€)',
