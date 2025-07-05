@@ -362,8 +362,8 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
     # Calculate available budget for this category group
     available_budget = calculate_category_group_available_budget(group_name, budget_df)
     
-    # Create metrics row
-    col1, col2, col3 = st.columns(3)
+    # Create metrics row - First row
+    col1, col2 = st.columns(2)
     
     with col1:
         if group_target_amount > 0:
@@ -373,18 +373,27 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
             delta_text_3m = f"€{delta_3m:,.0f} vs target" if delta_3m != 0 else "On target"
             
             st.metric(
-                label="🎯 Target Goal",
+                label="🎯 Target Budget",
                 value=f"€{group_target_amount:,.0f}",
                 # delta=delta_text_3m,
                 # delta_color=delta_color_3m
             )
         else:
             st.metric(
-                label="🎯 Target Goal",
+                label="🎯 Target Budget",
                 value="No target set"
             )
     
-    with col2:
+    with col2:        
+        st.metric(
+            label="💰 Available Budget",
+            value=f"€{available_budget:,.0f}",
+        )
+    
+    # Create metrics row - Second row
+    col3, col4 = st.columns(2)
+    
+    with col3:
         if group_target_amount > 0:
             # Calculate delta for 3-month average as percentage
             delta_3m = avg_3_months - group_target_amount
@@ -402,18 +411,22 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
             delta_color=delta_color_3m
         )
     
-    with col3:
-        # Determine color based on available budget
-        if available_budget >= 0:
-            delta_color = "normal"
-            delta_text = "Available"
-        else:
+    with col4:
+        # Calculate suggested budget: -(available_budget - (avg_3_months*3))/3
+        suggested_budget = -(available_budget - (avg_3_months * 3)) / 3
+        
+        # Calculate delta as difference ratio to target budget
+        if group_target_amount > 0:
+            delta_ratio = ((suggested_budget - group_target_amount) / group_target_amount) * 100
+            delta_text = f"{delta_ratio:+.1f}%"
             delta_color = "inverse"
-            delta_text = "Over budget"
+        else:
+            delta_text = None
+            delta_color = "inverse"
         
         st.metric(
-            label="💰 Available Budget",
-            value=f"€{available_budget:,.0f}",
+            label="💡 Suggested Budget",
+            value=f"€{suggested_budget:,.0f}",
             delta=delta_text,
             delta_color=delta_color
         )
