@@ -226,6 +226,8 @@ def main():
         [
             st.Page("pages/overview.py", title="Overview", icon="📊"),
             st.Page("pages/categories.py", title="Categories", icon="📋"),
+            st.Page("pages/transactions.py", title="Transactions", icon="📄"),
+            st.Page("pages/budget_data.py", title="Budget Data", icon="💰"),
         ]
     )
     pg.run()
