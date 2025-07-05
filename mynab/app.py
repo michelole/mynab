@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import os
 from dotenv import load_dotenv
 
@@ -15,7 +15,7 @@ load_dotenv()
 # Page configuration
 st.set_page_config(
     page_title="YNAB Budget Dashboard",
-    page_icon="��",
+    page_icon="💰",
     layout="wide"
 )
 
@@ -480,6 +480,19 @@ def create_comprehensive_plot(data_type, transactions_df, budget_df, global_mont
     
     return fig
 
+def filter_data_by_date_range(transactions_df, start_date, end_date):
+    """Filter transactions dataframe by date range"""
+    if transactions_df.empty:
+        return transactions_df
+    
+    # Ensure date column is datetime
+    filtered_df = transactions_df.copy()
+    filtered_df['date'] = pd.to_datetime(filtered_df['date'])
+    
+    # Filter by date range
+    mask = (filtered_df['date'] >= pd.Timestamp(start_date)) & (filtered_df['date'] <= pd.Timestamp(end_date))
+    return filtered_df[mask]
+
 def main():
     st.markdown('<h1 class="main-header">💰 YNAB Budget Dashboard</h1>', unsafe_allow_html=True)
     
@@ -514,27 +527,75 @@ def main():
     excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments']
     filtered_transactions_df = transactions_df[~transactions_df['category_group'].isin(excluded_groups)].copy()
     
-    # Calculate global month range from all data
-    all_transactions = filtered_transactions_df.copy()
-    all_transactions['date'] = pd.to_datetime(all_transactions['date'])
-    all_transactions = all_transactions.reset_index(drop=True)
-    all_transactions['month'] = all_transactions['date'].dt.to_period('M')
+    # Sidebar date picker
+    st.sidebar.header("📅 Date Range Filter")
     
-    # Get the earliest and latest months from all data
-    earliest_month = all_transactions['month'].min()
-    latest_month = all_transactions['month'].max()
+    # Calculate default date range (last 12 months)
+    today = date.today()
+    default_start_date = today - timedelta(days=365)
+    default_end_date = today
     
-    # Convert to datetime for date_range
-    earliest_date = earliest_month.to_timestamp()
-    latest_date = latest_month.to_timestamp()
+    # Get the actual date range from the data
+    if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
+        filtered_transactions_df['date'] = pd.to_datetime(filtered_transactions_df['date'])
+        data_start_date = filtered_transactions_df['date'].min().date()
+        data_end_date = filtered_transactions_df['date'].max().date()
+        
+        # Use data range as defaults if available
+        default_start_date = data_start_date
+        default_end_date = data_end_date
     
-    # Always include current month, even if there are no transactions
-    current_month = pd.Timestamp.now().replace(day=1)
-    if current_month > latest_date:
-        latest_date = current_month
+    # Date picker in sidebar
+    start_date = st.sidebar.date_input(
+        "Start Date",
+        value=default_start_date,
+        min_value=date(2010, 1, 1),
+        max_value=today,
+        help="Select the start date for filtering data"
+    )
     
-    # Create global month range using month start frequency to ensure all months are included
-    global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='MS')
+    end_date = st.sidebar.date_input(
+        "End Date",
+        value=default_end_date,
+        min_value=date(2010, 1, 1),
+        max_value=today,
+        help="Select the end date for filtering data"
+    )
+    
+    # Validate date range
+    if start_date > end_date:
+        st.sidebar.error("Start date must be before end date!")
+        return
+    
+    # Apply date filtering
+    filtered_transactions_df = filter_data_by_date_range(filtered_transactions_df, start_date, end_date)
+    
+    # Show date range info in sidebar
+    st.sidebar.success(f"📊 Showing data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    st.sidebar.info(f"📈 {len(filtered_transactions_df)} transactions in selected range")
+    
+    # Calculate global month range from filtered data
+    if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
+        all_transactions = filtered_transactions_df.copy()
+        all_transactions['date'] = pd.to_datetime(all_transactions['date'])
+        all_transactions = all_transactions.reset_index(drop=True)
+        all_transactions['month'] = all_transactions['date'].dt.to_period('M')
+        
+        # Get the earliest and latest months from filtered data
+        earliest_month = all_transactions['month'].min()
+        latest_month = all_transactions['month'].max()
+        
+        # Convert to datetime for date_range
+        earliest_date = earliest_month.to_timestamp()
+        latest_date = latest_month.to_timestamp()
+        
+        # Create global month range using month start frequency to ensure all months are included
+        global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='MS')
+    else:
+        # If no data in range, create a default range
+        global_month_range = pd.date_range(start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq='MS')
+        earliest_date = pd.Timestamp(start_date)
+        latest_date = pd.Timestamp(end_date)
     
     # Display summary metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -549,11 +610,17 @@ def main():
     
     with col3:
         # Create a copy for calculations to avoid modifying the original
-        calc_df = filtered_transactions_df.copy()
-        calc_df['date'] = pd.to_datetime(calc_df['date'])
-        expense_df = calc_df[~calc_df['is_income']]
-        avg_monthly_expenses = expense_df.groupby(expense_df['date'].dt.to_period('M'))['amount'].sum().mean()
-        st.metric("Avg Monthly Expenses", f"€{avg_monthly_expenses:,.2f}")
+        if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
+            calc_df = filtered_transactions_df.copy()
+            calc_df['date'] = pd.to_datetime(calc_df['date'])
+            expense_df = calc_df[~calc_df['is_income']]
+            if not expense_df.empty:
+                avg_monthly_expenses = expense_df.groupby(expense_df['date'].dt.to_period('M'))['amount'].sum().mean()
+                st.metric("Avg Monthly Expenses", f"€{avg_monthly_expenses:,.2f}")
+            else:
+                st.metric("Avg Monthly Expenses", "€0.00")
+        else:
+            st.metric("Avg Monthly Expenses", "€0.00")
     
     with col4:
         num_transactions = len(filtered_transactions_df)
@@ -621,9 +688,9 @@ def main():
     
     with tab1:
         # Add category filter
-        if not transactions_df.empty and 'category' in transactions_df.columns:
-            # Get unique categories for the selectbox
-            unique_categories = ['All Categories'] + sorted(transactions_df['category'].unique().tolist())
+        if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty and 'category' in filtered_transactions_df.columns:
+            # Get unique categories for the selectbox (from filtered data)
+            unique_categories = ['All Categories'] + sorted(filtered_transactions_df['category'].unique().tolist())
             selected_category = st.selectbox(
                 "Filter by Category:",
                 options=unique_categories,
@@ -632,13 +699,13 @@ def main():
             
             # Filter dataframe based on selection
             if selected_category == 'All Categories':
-                filtered_df = transactions_df
+                display_df = filtered_transactions_df
             else:
-                filtered_df = transactions_df[transactions_df['category'] == selected_category]
+                display_df = filtered_transactions_df[filtered_transactions_df['category'] == selected_category]
             
-            st.dataframe(filtered_df, use_container_width=True)
+            st.dataframe(display_df, use_container_width=True)
         else:
-            st.dataframe(transactions_df, use_container_width=True)
+            st.dataframe(filtered_transactions_df, use_container_width=True)
     
     with tab2:
         if not budget_df.empty:
