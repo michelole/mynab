@@ -380,7 +380,11 @@ def create_comprehensive_plot(data_type, transactions_df, budget_df, global_mont
         title = 'Total Income - Comprehensive Analysis'
         color = '#2ca02c'  # Green for income
     elif data_type == 'total_expense':
-        filtered_df = transactions_df[~transactions_df['is_income']].copy()
+        # Include only transactions with a category group
+        filtered_df = transactions_df[
+            (transactions_df['category_group'].astype(str) != 'nan') & 
+            (transactions_df['category_group'].astype(str) != '')
+        ].copy()
         title = 'Total Expenses - Comprehensive Analysis'
         color = '#ff7f0e'  # Orange for expenses
     
@@ -601,7 +605,12 @@ def main():
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        total_expenses = filtered_transactions_df[~filtered_transactions_df['is_income']]['amount'].sum()
+        # Include only transactions with a category group
+        transactions_with_category = filtered_transactions_df[
+            (filtered_transactions_df['category_group'].astype(str) != 'nan') & 
+            (filtered_transactions_df['category_group'].astype(str) != '')
+        ]
+        total_expenses = transactions_with_category['amount'].sum()
         st.metric("Total Expenses", f"€{total_expenses:,.2f}")
     
     with col2:
@@ -613,9 +622,17 @@ def main():
         if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
             calc_df = filtered_transactions_df.copy()
             calc_df['date'] = pd.to_datetime(calc_df['date'])
-            expense_df = calc_df[~calc_df['is_income']]
-            if not expense_df.empty:
-                avg_monthly_expenses = expense_df.groupby(expense_df['date'].dt.to_period('M'))['amount'].sum().mean()
+            # Include only transactions with a category group
+            transactions_with_category = calc_df[
+                (calc_df['category_group'].astype(str) != 'nan') & 
+                (calc_df['category_group'].astype(str) != '')
+            ]
+            if not transactions_with_category.empty:
+                # Ensure date column is properly converted to datetime
+                transactions_with_category['date'] = pd.to_datetime(transactions_with_category['date'])
+                # Group by month and calculate average
+                monthly_expenses = transactions_with_category.groupby(transactions_with_category['date'].dt.to_period('M'))['amount'].sum()
+                avg_monthly_expenses = monthly_expenses.mean()
                 st.metric("Avg Monthly Expenses", f"€{avg_monthly_expenses:,.2f}")
             else:
                 st.metric("Avg Monthly Expenses", "€0.00")
