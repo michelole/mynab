@@ -10,7 +10,8 @@ from mynab.utils import (
     get_ynab_data, process_categories_data, process_transactions_data, process_months_data,
     calculate_moving_average, calculate_forecast_trend, calculate_category_group_averages,
     calculate_category_group_available_budget, filter_data_by_date_range, safe_strftime,
-    get_default_date_range, get_global_month_range, get_excluded_groups, get_default_category_groups
+    get_default_date_range, get_global_month_range, get_excluded_groups, get_default_category_groups,
+    create_unified_plot
 )
 
 # Page configuration
@@ -22,213 +23,7 @@ st.set_page_config(
 
 def create_category_group_plot(group_name, transactions_df, budget_df, global_month_range, categories_data):
     """Create comprehensive plot for a single category group"""
-    # Filter data for this category group
-    group_transactions = transactions_df[transactions_df['category_group'] == group_name].copy()
-    
-    if group_transactions.empty:
-        return None
-    
-    # Calculate total target goal for this category group
-    group_target_amount = 0
-    categories_with_targets = []
-    
-    for cat in categories_data:
-        if cat['group'] == group_name and cat.get('target_amount') is not None:
-            group_target_amount += cat['target_amount']
-            categories_with_targets.append(cat)
-    
-    # Calculate average metrics
-    avg_12_months = calculate_category_group_averages(group_name, transactions_df, 12)
-    
-    # Calculate available budget for this category group
-    available_budget = calculate_category_group_available_budget(group_name, budget_df)
-    
-    # Create metrics row - First row
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if group_target_amount > 0:
-            # Calculate delta for 12-month average
-            delta_12m = avg_12_months - group_target_amount
-            delta_color_12m = "normal"
-            delta_text_12m = f"€{delta_12m:,.0f} vs target" if delta_12m != 0 else "On target"
-            
-            st.metric(
-                label="🎯 Target Budget",
-                value=f"€{group_target_amount:,.0f}",
-                # delta=delta_text_12m,
-                # delta_color=delta_color_12m
-            )
-        else:
-            st.metric(
-                label="🎯 Target Budget",
-                value="No target set"
-            )
-    
-    with col2:        
-        st.metric(
-            label="💰 Available Budget",
-            value=f"€{available_budget:,.0f}",
-        )
-    
-    # Create metrics row - Second row
-    col3, col4 = st.columns(2)
-    
-    with col3:
-        if group_target_amount > 0:
-            # Calculate delta for 12-month average as percentage
-            delta_12m = avg_12_months - group_target_amount
-            delta_pct_12m = (delta_12m / group_target_amount) * 100 if group_target_amount > 0 else 0
-            delta_color_12m = "inverse"
-            delta_text_12m = f"{delta_pct_12m:+.1f}%" if delta_12m != 0 else "On target"
-        else:
-            delta_text_12m = None
-            delta_color_12m = "normal"
-        
-        st.metric(
-            label="📊 Last 12 Months Avg",
-            value=f"€{avg_12_months:,.0f}",
-            delta=delta_text_12m,
-            delta_color=delta_color_12m
-        )
-    
-    with col4:
-        # Calculate suggested budget: -(available_budget - (avg_12_months*12))/12
-        suggested_budget = -(available_budget - (avg_12_months * 12)) / 12
-        
-        # Calculate delta as difference ratio to target budget
-        if group_target_amount > 0:
-            delta_ratio = ((suggested_budget - group_target_amount) / group_target_amount) * 100
-            delta_text = f"{delta_ratio:+.1f}%"
-            delta_color = "inverse"
-        else:
-            delta_text = None
-            delta_color = "inverse"
-        
-        st.metric(
-            label="💡 Suggested Budget",
-            value=f"€{suggested_budget:,.0f}",
-            delta=delta_text,
-            delta_color=delta_color
-        )
-    
-    # Aggregate transactions by month
-    group_transactions['date'] = pd.to_datetime(group_transactions['date'])
-    group_transactions['month'] = group_transactions['date'].dt.to_period('M')
-    monthly_expenses = group_transactions.groupby('month')['amount'].sum().reset_index()
-    monthly_expenses['month'] = monthly_expenses['month'].astype(str)
-    
-    # Create single comprehensive plot
-    fig = go.Figure()
-    
-    if not monthly_expenses.empty:
-        # Sort by month for proper ordering
-        monthly_expenses = monthly_expenses.sort_values('month')
-        monthly_expenses['month_date'] = pd.to_datetime(monthly_expenses['month'])
-        monthly_expenses = monthly_expenses.sort_values('month_date')
-        
-        # Use the global month range instead of group-specific range
-        all_months_df = pd.DataFrame({
-            'month_date': global_month_range,
-            'month': global_month_range.strftime('%Y-%m')
-        })
-        
-        # Merge with actual data to include months with 0 expenses
-        complete_monthly_data = all_months_df.merge(
-            monthly_expenses[['month', 'amount']], 
-            on='month', 
-            how='left'
-        ).fillna(0)
-        
-        # Sort by month date for proper ordering
-        complete_monthly_data = complete_monthly_data.sort_values('month_date')
-        
-        # Bar chart for actual expenses (including 0 values) - flipped to positive side
-        fig.add_trace(
-            go.Bar(
-                x=complete_monthly_data['month'],
-                y=abs(complete_monthly_data['amount']),
-                name='Actual Expenses',
-                marker_color='#ff7f0e',
-                opacity=0.8
-            )
-        )
-        
-        # Moving average line (if we have enough data) - flipped to positive side
-        if len(complete_monthly_data) >= 3:
-            moving_avg = calculate_moving_average(abs(complete_monthly_data['amount']))
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=complete_monthly_data['month'],
-                    y=moving_avg,
-                    name='12-Month Moving Average',
-                    line=dict(color='#1f77b4', width=2, dash='dash'),
-                    mode='lines'
-                )
-            )
-            
-            # Forecast trend line - flipped to positive side
-            trend_line, forecast = calculate_forecast_trend(abs(complete_monthly_data['amount']))
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=complete_monthly_data['month'],
-                    y=trend_line,
-                    name='12-Month Forecast Trend',
-                    line=dict(color='#d62728', width=2),
-                    mode='lines'
-                )
-            )
-            
-            # Add forecast extension - flipped to positive side
-            future_months = pd.date_range(
-                start=complete_monthly_data['month_date'].iloc[-1] + pd.DateOffset(months=1),
-                periods=3,
-                freq='MS'
-            )
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=future_months.strftime('%Y-%m'),
-                    y=abs(forecast),
-                    name='Forecast (Next 3 Months)',
-                    line=dict(color='#d62728', width=2, dash='dot'),
-                    mode='lines'
-                )
-            )
-        
-        # Add target goal line if available
-        if group_target_amount > 0:
-            # Create a horizontal line across all months
-            all_months = complete_monthly_data['month'].tolist()
-            if len(complete_monthly_data) >= 3 and 'future_months' in locals():
-                # Include future months in the target line
-                future_month_strs = future_months.strftime('%Y-%m').tolist()
-                all_months.extend(future_month_strs)
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=all_months,
-                    y=[group_target_amount] * len(all_months),
-                    name=f'Target Goal (€{group_target_amount:,.0f})',
-                    line=dict(color='#2ca02c', width=3, dash='solid'),
-                    mode='lines'
-                )
-            )
-    
-    # Update layout
-    fig.update_layout(
-        # title=f'{group_name} - Comprehensive Analysis{target_info}',
-        height=400,
-        showlegend=False,
-        hovermode='x unified',
-        xaxis_title='Month',
-        yaxis_title='Amount (€)',
-        barmode='overlay'
-    )
-    
-    return fig
+    return create_unified_plot(group_name, transactions_df, budget_df, global_month_range, categories_data, 'category_group')
 
 def create_comprehensive_plot(data_type, transactions_df, budget_df, global_month_range):
     """Create comprehensive plot for total income, total expense, or total net income"""
@@ -422,10 +217,13 @@ if transactions_df is None:
 
 # Filter out transactions with excluded category groups
 excluded_groups = get_excluded_groups()
-filtered_transactions_df = transactions_df[~transactions_df['category_group'].isin(excluded_groups)].copy()
-
-# Apply date filtering
-filtered_transactions_df = filter_data_by_date_range(filtered_transactions_df, start_date, end_date)
+if transactions_df is not None:
+    filtered_transactions_df = transactions_df[~transactions_df['category_group'].isin(excluded_groups)].copy()
+    
+    # Apply date filtering
+    filtered_transactions_df = filter_data_by_date_range(filtered_transactions_df, start_date, end_date)
+else:
+    filtered_transactions_df = pd.DataFrame()
 
 if not selected_category_groups:
     # Get all category group names (excluding the specified groups)
@@ -451,7 +249,7 @@ if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transacti
     filtered_transactions_df = pd.concat([income_transactions, expense_transactions], ignore_index=True)
 
 # Filter budget data to only include selected category groups
-if isinstance(budget_df, pd.DataFrame) and not budget_df.empty:
+if budget_df is not None and isinstance(budget_df, pd.DataFrame) and not budget_df.empty:
     budget_df = budget_df[budget_df['category_group'].isin(selected_category_groups)].copy()
 
 # Calculate global month range from original data (before category filtering)
@@ -655,7 +453,7 @@ with tab1:
         st.dataframe(filtered_transactions_df, use_container_width=True)
 
 with tab2:
-    if not budget_df.empty:
+    if budget_df is not None and not budget_df.empty:
         st.dataframe(budget_df, use_container_width=True)
     else:
         st.info("No budget data available - using transaction data for analysis")
