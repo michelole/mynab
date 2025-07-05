@@ -509,7 +509,6 @@ def create_comprehensive_plot(data_type, transactions_df, budget_df, global_mont
             (transactions_df['category'] == 'Inflow: Ready to Assign') & 
             (transactions_df['payee_name'] != 'Starting Balance')
         ].copy()
-        title = 'Total Income - Comprehensive Analysis'
         color = '#2ca02c'  # Green for income
     elif data_type == 'total_expense':
         # Include only transactions with a category group
@@ -517,13 +516,11 @@ def create_comprehensive_plot(data_type, transactions_df, budget_df, global_mont
             (transactions_df['category_group'].astype(str) != 'nan') & 
             (transactions_df['category_group'].astype(str) != '')
         ].copy()
-        title = 'Total Expenses - Comprehensive Analysis'
         color = '#ff7f0e'  # Orange for expenses
     elif data_type == 'total_net_income':
         # For net income, we need to calculate monthly income + monthly expenses
         # We'll process this differently in the aggregation step
         filtered_df = transactions_df.copy()  # Use all transactions for net income calculation
-        title = 'Total Net Income - Comprehensive Analysis'
         color = '#1f77b4'  # Blue for net income
     
     if filtered_df.empty:
@@ -658,7 +655,6 @@ def create_comprehensive_plot(data_type, transactions_df, budget_df, global_mont
     
     # Update layout
     fig.update_layout(
-        title=title,
         height=500,
         showlegend=False,
         hovermode='x unified',
