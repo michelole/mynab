@@ -140,11 +140,6 @@ def test_process_transactions_data():
     assert df.iloc[1]["amount"] == 1.0  # 1000 millidollars = €1.00
     assert df.iloc[2]["amount"] == -2.0  # -2000 millidollars = -€2.00
 
-    # Check is_income flag
-    assert df.iloc[0]["is_income"] == False
-    assert df.iloc[1]["is_income"] == True
-    assert df.iloc[2]["is_income"] == False
-
 
 if __name__ == "__main__":
     pytest.main([__file__])

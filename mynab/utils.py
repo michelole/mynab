@@ -165,9 +165,6 @@ def process_transactions_data(transactions_response, categories_data):
                             category_group = cat["group"]
                             break
 
-                # Determine if this is income or expense
-                is_income = subtransaction.amount > 0
-
                 transactions.append(
                     {
                         "date": transaction_date,
@@ -177,9 +174,7 @@ def process_transactions_data(transactions_response, categories_data):
                         "category_group": category_group,
                         "payee_name": transaction.payee_name or "",
                         "memo": subtransaction.memo or transaction.memo or "",
-                        "is_income": is_income,
                         "transaction_id": transaction.id,
-                        "is_subtransaction": True,
                     }
                 )
         else:
@@ -194,9 +189,6 @@ def process_transactions_data(transactions_response, categories_data):
                         category_group = cat["group"]
                         break
 
-            # Determine if this is income or expense
-            is_income = transaction.amount > 0
-
             transactions.append(
                 {
                     "date": transaction_date,
@@ -205,9 +197,7 @@ def process_transactions_data(transactions_response, categories_data):
                     "category_group": category_group,
                     "payee_name": transaction.payee_name or "",
                     "memo": transaction.memo or "",
-                    "is_income": is_income,
                     "transaction_id": transaction.id,
-                    "is_subtransaction": False,
                 }
             )
 
