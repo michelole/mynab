@@ -22,6 +22,7 @@ from mynab.utils import (
     get_excluded_groups,
     get_default_category_groups,
     create_unified_plot,
+    calculate_global_y_range,
 )
 
 # Page configuration
@@ -31,7 +32,12 @@ st.set_page_config(
 
 
 def create_category_group_plot(
-    group_name, transactions_df, budget_df, global_month_range, categories_data
+    group_name,
+    transactions_df,
+    budget_df,
+    global_month_range,
+    categories_data,
+    y_range=None,
 ):
     """Create comprehensive plot for a single category group"""
     return create_unified_plot(
@@ -41,11 +47,12 @@ def create_category_group_plot(
         global_month_range,
         categories_data,
         "category_group",
+        y_range,
     )
 
 
 def create_comprehensive_plot(
-    data_type, transactions_df, budget_df, global_month_range
+    data_type, transactions_df, budget_df, global_month_range, y_range=None
 ):
     """Create comprehensive plot for total income, total expense, or total net income"""
     # Filter data based on type
@@ -202,14 +209,20 @@ def create_comprehensive_plot(
         )
 
     # Update layout
-    fig.update_layout(
-        height=500,
-        showlegend=False,
-        hovermode="x unified",
-        xaxis_title="Month",
-        yaxis_title="Amount (€)",
-        barmode="overlay",
-    )
+    layout_update = {
+        "height": 500,
+        "showlegend": False,
+        "hovermode": "x unified",
+        "xaxis_title": "Month",
+        "yaxis_title": "Amount (€)",
+        "barmode": "overlay",
+    }
+
+    # Apply global y-axis range if provided
+    if y_range is not None:
+        layout_update["yaxis"] = {"range": y_range}
+
+    fig.update_layout(**layout_update)
 
     return fig
 
@@ -305,6 +318,30 @@ if (
 global_month_range, earliest_date, latest_date = get_global_month_range(
     transactions_df, start_date, end_date
 )
+
+# Calculate global y-axis ranges if enabled
+global_scale_enabled = st.session_state.get("global_scale_enabled", False)
+overview_y_range = None
+category_group_y_range = None
+
+if global_scale_enabled:
+    # Calculate for overview plots
+    overview_y_range = calculate_global_y_range(
+        filtered_transactions_df,
+        budget_df,
+        categories_data,
+        "overview",
+    )
+
+    # Calculate for category group plots
+    if selected_category_groups:
+        category_group_y_range = calculate_global_y_range(
+            filtered_transactions_df,
+            budget_df,
+            categories_data,
+            "category_group",
+            selected_category_groups,
+        )
 
 # Display summary metrics - Row 1 (Totals)
 col1, col2, col3 = st.columns(3)
@@ -453,7 +490,11 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.subheader("💰 Total Income")
     income_fig = create_comprehensive_plot(
-        "total_income", filtered_transactions_df, budget_df, global_month_range
+        "total_income",
+        filtered_transactions_df,
+        budget_df,
+        global_month_range,
+        overview_y_range,
     )
     if income_fig:
         st.plotly_chart(income_fig, use_container_width=True)
@@ -463,7 +504,11 @@ with col1:
 with col2:
     st.subheader("💸 Total Expenses")
     expense_fig = create_comprehensive_plot(
-        "total_expense", filtered_transactions_df, budget_df, global_month_range
+        "total_expense",
+        filtered_transactions_df,
+        budget_df,
+        global_month_range,
+        overview_y_range,
     )
     if expense_fig:
         st.plotly_chart(expense_fig, use_container_width=True)
@@ -473,7 +518,11 @@ with col2:
 with col3:
     st.subheader("📈 Monthly Net Income")
     net_income_fig = create_comprehensive_plot(
-        "total_net_income", filtered_transactions_df, budget_df, global_month_range
+        "total_net_income",
+        filtered_transactions_df,
+        budget_df,
+        global_month_range,
+        overview_y_range,
     )
     if net_income_fig:
         st.plotly_chart(net_income_fig, use_container_width=True)
@@ -500,6 +549,7 @@ for i in range(0, len(selected_category_groups), cols_per_row):
                     budget_df,
                     global_month_range,
                     categories_data,
+                    category_group_y_range,
                 )
                 if group_fig:
                     st.plotly_chart(group_fig, use_container_width=True)

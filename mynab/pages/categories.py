@@ -16,6 +16,7 @@ from mynab.utils import (
     get_excluded_groups,
     get_default_categories,
     create_unified_plot,
+    calculate_global_y_range,
 )
 
 # Page configuration
@@ -56,7 +57,12 @@ st.markdown(
 
 
 def create_category_plot(
-    category_name, transactions_df, budget_df, global_month_range, categories_data
+    category_name,
+    transactions_df,
+    budget_df,
+    global_month_range,
+    categories_data,
+    y_range=None,
 ):
     """Create comprehensive plot for a single category with enhanced metrics"""
     return create_unified_plot(
@@ -66,6 +72,7 @@ def create_category_plot(
         global_month_range,
         categories_data,
         "category",
+        y_range,
     )
 
 
@@ -257,6 +264,18 @@ def main():
         filtered_transactions_df, start_date, end_date
     )
 
+    # Calculate global y-axis range for categories if enabled
+    global_scale_enabled = st.session_state.get("global_scale_enabled", False)
+    category_y_range = None
+    if global_scale_enabled and filtered_category_names:
+        category_y_range = calculate_global_y_range(
+            filtered_transactions_df,
+            budget_df,
+            categories_data,
+            "category",
+            filtered_category_names,
+        )
+
     # Category Analysis
     st.header("📊 Category Analysis")
 
@@ -275,6 +294,7 @@ def main():
                         budget_df,
                         global_month_range,
                         categories_data,
+                        category_y_range,
                     )
                     if category_fig:
                         st.plotly_chart(category_fig, use_container_width=True)

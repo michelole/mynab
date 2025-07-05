@@ -69,6 +69,8 @@ def initialize_session_state():
         st.session_state.categories_data = None
     if "category_groups" not in st.session_state:
         st.session_state.category_groups = None
+    if "global_scale_enabled" not in st.session_state:
+        st.session_state.global_scale_enabled = False
 
 
 def load_data():
@@ -248,6 +250,18 @@ def setup_sidebar():
 
             # Store in session state
             st.session_state.selected_categories = selected_categories
+
+            # Global Scale Control
+        st.header("📏 Plot Settings")
+
+        global_scale_enabled = st.checkbox(
+            "Global Scale",
+            value=st.session_state.global_scale_enabled,
+            help="When enabled, all plots in a section will share the same y-axis scale for better comparison.",
+        )
+
+        # Store in session state
+        st.session_state.global_scale_enabled = global_scale_enabled
 
     return True
 

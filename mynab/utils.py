@@ -498,6 +498,138 @@ def get_default_categories():
     return ["Groceries", "Dining Out", "Transportation"]
 
 
+def calculate_global_y_range(
+    transactions_df,
+    budget_df,
+    categories_data,
+    plot_type="category",
+    category_names=None,
+):
+    """
+    Calculate global y-axis range for a set of plots
+
+    Args:
+        transactions_df: DataFrame of transactions
+        budget_df: DataFrame of budget data
+        categories_data: List of category data dictionaries
+        plot_type: 'category', 'category_group', or 'overview'
+        category_names: List of category/group names to include in calculation
+
+    Returns:
+        tuple: (min_value, max_value) for y-axis range
+    """
+    if transactions_df.empty:
+        return None
+
+    all_y_values = []
+
+    # Get the global month range for consistent data processing
+    global_month_range = pd.date_range(
+        start=transactions_df["date"].min(),
+        end=transactions_df["date"].max(),
+        freq="MS",
+    )
+
+    if plot_type == "category" and category_names:
+        # Calculate for individual categories
+        for category_name in category_names:
+            filtered_transactions = transactions_df[
+                transactions_df["category"] == category_name
+            ].copy()
+
+            if not filtered_transactions.empty:
+                # Aggregate by month
+                filtered_transactions["date"] = pd.to_datetime(
+                    filtered_transactions["date"]
+                )
+                filtered_transactions["month"] = filtered_transactions[
+                    "date"
+                ].dt.to_period("M")
+                monthly_expenses = filtered_transactions.groupby("month")[
+                    "amount"
+                ].sum()
+
+                # Add to all values
+                all_y_values.extend(abs(monthly_expenses.values))
+
+                # Add target amount if available
+                for cat in categories_data:
+                    if (
+                        cat["name"] == category_name
+                        and cat.get("target_amount") is not None
+                    ):
+                        all_y_values.append(cat["target_amount"])
+
+    elif plot_type == "category_group" and category_names:
+        # Calculate for category groups
+        for group_name in category_names:
+            filtered_transactions = transactions_df[
+                transactions_df["category_group"] == group_name
+            ].copy()
+
+            if not filtered_transactions.empty:
+                # Aggregate by month
+                filtered_transactions["date"] = pd.to_datetime(
+                    filtered_transactions["date"]
+                )
+                filtered_transactions["month"] = filtered_transactions[
+                    "date"
+                ].dt.to_period("M")
+                monthly_expenses = filtered_transactions.groupby("month")[
+                    "amount"
+                ].sum()
+
+                # Add to all values
+                all_y_values.extend(abs(monthly_expenses.values))
+
+                # Add target amounts for categories in this group
+                for cat in categories_data:
+                    if (
+                        cat["group"] == group_name
+                        and cat.get("target_amount") is not None
+                    ):
+                        all_y_values.append(cat["target_amount"])
+
+    elif plot_type == "overview":
+        # Calculate for overview plots (income, expenses, net income)
+        # Income
+        income_transactions = transactions_df[
+            (transactions_df["category"] == "Inflow: Ready to Assign")
+            & (transactions_df["payee_name"] != "Starting Balance")
+        ].copy()
+
+        if not income_transactions.empty:
+            income_transactions["date"] = pd.to_datetime(income_transactions["date"])
+            income_transactions["month"] = income_transactions["date"].dt.to_period("M")
+            monthly_income = income_transactions.groupby("month")["amount"].sum()
+            all_y_values.extend(monthly_income.values)
+
+        # Expenses
+        expense_transactions = transactions_df[
+            (transactions_df["category_group"].astype(str) != "nan")
+            & (transactions_df["category_group"].astype(str) != "")
+        ].copy()
+
+        if not expense_transactions.empty:
+            expense_transactions["date"] = pd.to_datetime(expense_transactions["date"])
+            expense_transactions["month"] = expense_transactions["date"].dt.to_period(
+                "M"
+            )
+            monthly_expenses = expense_transactions.groupby("month")["amount"].sum()
+            all_y_values.extend(abs(monthly_expenses.values))
+
+    # Calculate range with some padding
+    if all_y_values:
+        min_val = min(all_y_values)
+        max_val = max(all_y_values)
+
+        # Add 10% padding
+        padding = (max_val - min_val) * 0.1
+        return [max(0, min_val - padding), max_val + padding]
+
+    return None
+
+
 def create_unified_plot(
     name,
     transactions_df,
@@ -505,6 +637,7 @@ def create_unified_plot(
     global_month_range,
     categories_data,
     plot_type="category",
+    y_range=None,
 ):
     """
     Create comprehensive plot for either a category group or individual category
@@ -739,13 +872,19 @@ def create_unified_plot(
             )
 
     # Update layout
-    fig.update_layout(
-        height=400,
-        showlegend=False,
-        hovermode="x unified",
-        xaxis_title="Month",
-        yaxis_title="Amount (€)",
-        barmode="overlay",
-    )
+    layout_update = {
+        "height": 400,
+        "showlegend": False,
+        "hovermode": "x unified",
+        "xaxis_title": "Month",
+        "yaxis_title": "Amount (€)",
+        "barmode": "overlay",
+    }
+
+    # Apply global y-axis range if provided
+    if y_range is not None:
+        layout_update["yaxis"] = {"range": y_range}
+
+    fig.update_layout(**layout_update)
 
     return fig
