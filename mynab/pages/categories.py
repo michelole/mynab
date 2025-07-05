@@ -249,11 +249,6 @@ def main():
         filtered_transactions_df, start_date, end_date
     )
 
-    # Display date range info
-    start_str = safe_strftime(earliest_date)
-    end_str = safe_strftime(latest_date)
-    st.info(f"Date range: {start_str} to {end_str}")
-
     # Category selection
     st.header("📊 Category Analysis")
 

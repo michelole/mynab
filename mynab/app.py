@@ -97,8 +97,6 @@ def load_data():
         if not budget_id:
             return False
 
-        st.success(f"Connected to budget: **{budget_name}**")
-
         # Process data
         categories_data, category_groups = process_categories_data(categories_response)
         transactions_df = process_transactions_data(
@@ -107,6 +105,7 @@ def load_data():
         budget_df = process_months_data(months_response, categories_data)
 
         # Store in session state
+        st.session_state.budget_name = budget_name
         st.session_state.transactions_df = transactions_df
         st.session_state.budget_df = budget_df
         st.session_state.categories_data = categories_data
@@ -122,6 +121,8 @@ def setup_sidebar():
     """Setup sidebar with filters"""
     with st.sidebar:
         st.header("📅 Date Range Filter")
+
+        st.info(f"**{st.session_state.budget_name}**")
 
         # Get default date range
         default_start_date, default_end_date = get_default_date_range()
@@ -203,33 +204,6 @@ def setup_sidebar():
 
             # Store in session state
             st.session_state.selected_category_groups = selected_category_groups
-
-            # Show date range info in sidebar
-            start_str = safe_strftime(start_date)
-            end_str = safe_strftime(end_date)
-            st.info(f"Date range: {start_str} to {end_str}")
-            st.info(
-                f"Selected groups: {len(selected_category_groups)} of {len(category_group_names)}"
-            )
-
-            # Count transactions for sidebar info
-            if st.session_state.transactions_df is not None:
-                filtered_df = pd.DataFrame(st.session_state.transactions_df)
-                income_count = len(
-                    filtered_df[
-                        (filtered_df["category"] == "Inflow: Ready to Assign")
-                        & (filtered_df["payee_name"] != "Starting Balance")
-                    ]
-                )
-                expense_count = len(
-                    filtered_df[
-                        (filtered_df["category_group"].isin(selected_category_groups))
-                        & (filtered_df["category"] != "Inflow: Ready to Assign")
-                    ]
-                )
-                st.info(
-                    f"📈 {income_count} income + {expense_count} expense transactions"
-                )
 
     return True
 
