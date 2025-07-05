@@ -805,14 +805,19 @@ def main():
         earliest_month = all_transactions['month'].min()
         latest_month = all_transactions['month'].max()
         # Convert to datetime for date_range, handle NaTType
-        if pd.isna(earliest_month) or pd.isna(latest_month):
+        try:
+            if pd.isna(earliest_month) or pd.isna(latest_month):
+                global_month_range = pd.date_range(start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq='MS')
+                earliest_date = pd.Timestamp(start_date)
+                latest_date = pd.Timestamp(end_date)
+            else:
+                earliest_date = earliest_month.to_timestamp() if hasattr(earliest_month, 'to_timestamp') else pd.Timestamp(start_date)
+                latest_date = latest_month.to_timestamp() if hasattr(latest_month, 'to_timestamp') else pd.Timestamp(end_date)
+                global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='MS')
+        except Exception:
             global_month_range = pd.date_range(start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq='MS')
             earliest_date = pd.Timestamp(start_date)
             latest_date = pd.Timestamp(end_date)
-        else:
-            earliest_date = earliest_month.to_timestamp() if hasattr(earliest_month, 'to_timestamp') else pd.Timestamp(start_date)
-            latest_date = latest_month.to_timestamp() if hasattr(latest_month, 'to_timestamp') else pd.Timestamp(end_date)
-            global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='MS')
     else:
         global_month_range = pd.date_range(start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq='MS')
         earliest_date = pd.Timestamp(start_date)
@@ -878,7 +883,7 @@ def main():
     
     with filter_col2:
         # Split transaction filter
-        if 'is_subtransaction' in filtered_transactions_df.columns:
+        if isinstance(filtered_transactions_df, pd.DataFrame) and 'is_subtransaction' in filtered_transactions_df.columns:
             split_filter_options = ['All Transactions', 'Regular Transactions Only', 'Split Transactions Only']
             selected_split_filter = st.selectbox(
                 "Filter by Transaction Type:",
@@ -917,8 +922,9 @@ def main():
         display_data['date'] = display_data['date'].apply(str)
         display_data['amount'] = display_data['amount'].round(2)
         column_order = ['date', 'category', 'category_group', 'amount', 'payee_name', 'memo', 'is_income']
-        if all(col in display_data.columns for col in column_order):
+        if isinstance(display_data, pd.DataFrame) and all(col in display_data.columns for col in column_order):
             display_data = display_data[column_order]
+        display_data = pd.DataFrame(display_data)
         display_data = display_data.rename(columns={
             'date': 'Date',
             'category': 'Category',

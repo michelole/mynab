@@ -808,18 +808,83 @@ def main():
     # Apply date filtering
     filtered_transactions_df = filter_data_by_date_range(filtered_transactions_df, start_date, end_date)
     
-    # Show date range info in sidebar
-    st.sidebar.success(f"📊 Showing data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-    st.sidebar.info(f"📈 {len(filtered_transactions_df)} transactions in selected range")
+    # Category Group Filter in sidebar
+    st.sidebar.header("📊 Category Group Filter")
     
-    # Calculate global month range from filtered data
+    # Get all category group names (excluding the specified groups)
+    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments', 'Hidden Categories']
+    category_group_names = sorted([group for group in category_groups.keys() if group not in excluded_groups])
+    
+    # Set default values for multiselect
+    default_groups = ["Lazer", "Necessidades"]
+    # Filter default groups to only include those that exist in the data
+    available_defaults = [group for group in default_groups if group in category_group_names]
+    
+    selected_category_groups = st.sidebar.multiselect(
+        "Select category groups to include:",
+        options=category_group_names,
+        default=available_defaults,
+        help="Choose which category groups to include in the analysis. Leave empty to show all groups."
+    )
+    
+    # If no groups are selected, show all groups
+    if not selected_category_groups:
+        selected_category_groups = category_group_names
+    
+    # Filter transactions to only include selected category groups (but preserve income transactions)
     if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
-        all_transactions = filtered_transactions_df.copy()
+        # Keep income transactions (they don't have category groups)
+        income_transactions = filtered_transactions_df[
+            (filtered_transactions_df['category'] == 'Inflow: Ready to Assign') & 
+            (filtered_transactions_df['payee_name'] != 'Starting Balance')
+        ].copy()
+        
+        # Filter expense transactions by selected category groups
+        expense_transactions = filtered_transactions_df[
+            (filtered_transactions_df['category_group'].isin(selected_category_groups)) &
+            (filtered_transactions_df['category'] != 'Inflow: Ready to Assign')
+        ].copy()
+        
+        # Combine income and filtered expense transactions
+        filtered_transactions_df = pd.concat([income_transactions, expense_transactions], ignore_index=True)
+    
+    # Filter budget data to only include selected category groups
+    if isinstance(budget_df, pd.DataFrame) and not budget_df.empty:
+        budget_df = budget_df[budget_df['category_group'].isin(selected_category_groups)].copy()
+    
+    # Show date range info in sidebar
+    # Safely handle earliest_date/latest_date for info display
+    def safe_strftime(dt):
+        try:
+            if pd.isna(dt):
+                return "N/A"
+            return dt.strftime('%Y-%m') if hasattr(dt, 'strftime') else str(dt)
+        except Exception:
+            return str(dt)
+    start_str = safe_strftime(start_date)
+    end_str = safe_strftime(end_date)
+    st.sidebar.info(f"Date range: {start_str} to {end_str}")
+    st.sidebar.info(f"Selected groups: {len(selected_category_groups)} of {len(category_group_names)}")
+    # Count transactions for sidebar info
+    filtered_df = pd.DataFrame(filtered_transactions_df)
+    income_count = len(filtered_df[
+        (filtered_df['category'] == 'Inflow: Ready to Assign') & 
+        (filtered_df['payee_name'] != 'Starting Balance')
+    ])
+    expense_count = len(filtered_df[
+        (filtered_df['category_group'].isin(selected_category_groups)) &
+        (filtered_df['category'] != 'Inflow: Ready to Assign')
+    ])
+    st.sidebar.info(f"📈 {income_count} income + {expense_count} expense transactions")
+    
+    # Calculate global month range from original data (before category filtering)
+    if isinstance(transactions_df, pd.DataFrame) and not transactions_df.empty:
+        all_transactions = transactions_df.copy()
         all_transactions['date'] = pd.to_datetime(all_transactions['date'])
         all_transactions = all_transactions.reset_index(drop=True)
         all_transactions['month'] = all_transactions['date'].dt.to_period('M')
         
-        # Get the earliest and latest months from filtered data
+        # Get the earliest and latest months from all data
         earliest_month = all_transactions['month'].min()
         latest_month = all_transactions['month'].max()
         
@@ -874,6 +939,7 @@ def main():
             
             if not income_transactions.empty:
                 # Ensure date column is properly converted to datetime
+                income_transactions = pd.DataFrame(income_transactions)
                 income_transactions['date'] = pd.to_datetime(income_transactions['date'])
                 # Group by month and calculate average
                 monthly_income = income_transactions.groupby(income_transactions['date'].dt.to_period('M'))['amount'].sum()
@@ -896,6 +962,7 @@ def main():
             ]
             if not transactions_with_category.empty:
                 # Ensure date column is properly converted to datetime
+                transactions_with_category = pd.DataFrame(transactions_with_category)
                 transactions_with_category['date'] = pd.to_datetime(transactions_with_category['date'])
                 # Group by month and calculate average
                 monthly_expenses = transactions_with_category.groupby(transactions_with_category['date'].dt.to_period('M'))['amount'].sum()
@@ -927,6 +994,8 @@ def main():
             
             if not income_transactions.empty or not expense_transactions.empty:
                 # Group by month and calculate net income
+                income_transactions = pd.DataFrame(income_transactions)
+                expense_transactions = pd.DataFrame(expense_transactions)
                 monthly_income = income_transactions.groupby(income_transactions['date'].dt.to_period('M'))['amount'].sum()
                 monthly_expenses = expense_transactions.groupby(expense_transactions['date'].dt.to_period('M'))['amount'].sum()
                 
@@ -984,25 +1053,6 @@ def main():
     
     # Category Group Analysis
     st.header("📊 Category Group Analysis")
-    
-    # Get all category group names (excluding the specified groups)
-    category_group_names = sorted([group for group in category_groups.keys() if group not in excluded_groups])
-    
-    # Set default values for multiselect
-    default_groups = ["Lazer", "Necessidades"]
-    # Filter default groups to only include those that exist in the data
-    available_defaults = [group for group in default_groups if group in category_group_names]
-    
-    selected_category_groups = st.multiselect(
-        "Select category groups to display:",
-        options=category_group_names,
-        default=available_defaults,
-        help="Choose which category groups to include in the analysis. Leave empty to show all groups."
-    )
-    
-    # If no groups are selected, show all groups
-    if not selected_category_groups:
-        selected_category_groups = category_group_names
     
     # Create a grid layout for the plots
     cols_per_row = 2
@@ -1064,7 +1114,7 @@ def main():
                 st.info(f"Found {len(categories_with_targets)} categories with target values")
                 
                 # Display target summary
-                target_summary = categories_with_targets[['name', 'group', 'target_amount', 'target_type', 'target_date']].copy()
+                target_summary = pd.DataFrame(categories_with_targets[['name', 'group', 'target_amount', 'target_type', 'target_date']].copy())
                 target_summary = target_summary.rename(columns={
                     'name': 'Category',
                     'group': 'Category Group',
