@@ -1,11 +1,16 @@
 import streamlit as st
-import ynab
+from ynab.configuration import Configuration
+from ynab.api_client import ApiClient
+from ynab.api.budgets_api import BudgetsApi
+from ynab.api.categories_api import CategoriesApi
+from ynab.api.transactions_api import TransactionsApi
+from ynab.api.months_api import MonthsApi
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import os
 from dotenv import load_dotenv
 
@@ -49,10 +54,10 @@ st.markdown("""
 def get_ynab_data(access_token):
     """Fetch data from YNAB API"""
     try:
-        configuration = ynab.Configuration(access_token=access_token)
-        with ynab.ApiClient(configuration) as api_client:
+        configuration = Configuration(access_token=access_token)
+        with ApiClient(configuration) as api_client:
             # Get budgets
-            budgets_api = ynab.BudgetsApi(api_client)
+            budgets_api = BudgetsApi(api_client)
             budgets_response = budgets_api.get_budgets()
             
             if not budgets_response.data.budgets:
@@ -63,11 +68,11 @@ def get_ynab_data(access_token):
             budget_name = budgets_response.data.budgets[0].name
             
             # Get categories
-            categories_api = ynab.CategoriesApi(api_client)
+            categories_api = CategoriesApi(api_client)
             categories_response = categories_api.get_categories(budget_id)
             
             # Get transactions for the last 24 months
-            transactions_api = ynab.TransactionsApi(api_client)
+            transactions_api = TransactionsApi(api_client)
             
             # Calculate date range (last 24 months)
             end_date = datetime.now()
@@ -75,12 +80,12 @@ def get_ynab_data(access_token):
             
             transactions_response = transactions_api.get_transactions(
                 budget_id,
-                since_date=start_date.strftime('%Y-%m-%d')
+                since_date=start_date.date()
             )
             
             # Get current month budget data for categories
-            months_api = ynab.MonthsApi(api_client)
-            current_month = datetime.now().strftime('%Y-%m-01')  # Use first day of current month
+            months_api = MonthsApi(api_client)
+            current_month = datetime.now().replace(day=1).date()  # Use first day of current month
             months_response = months_api.get_budget_month(budget_id, current_month)
             
             return budget_id, budget_name, categories_response, transactions_response, months_response
@@ -95,7 +100,7 @@ def process_categories_data(categories_response):
     category_groups = {}
     
     # Categories to exclude
-    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments']
+    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments', 'Hidden Categories']
     
     for group in categories_response.data.category_groups:
         group_name = group.name
@@ -108,11 +113,28 @@ def process_categories_data(categories_response):
         
         for category in group.categories:
             if not category.hidden and not category.deleted:
+                # Extract target/goal information
+                target_amount = None
+                target_type = None
+                target_date = None
+                
+                if hasattr(category, 'goal_target') and category.goal_target:
+                    target_amount = category.goal_target / 1000  # Convert from millidollars
+                
+                if hasattr(category, 'goal_type') and category.goal_type:
+                    target_type = category.goal_type
+                
+                if hasattr(category, 'goal_target_month') and category.goal_target_month:
+                    target_date = category.goal_target_month
+                
                 category_data = {
                     'id': category.id,
                     'name': category.name,
                     'group': group_name,
-                    'category_group_id': group.id
+                    'category_group_id': group.id,
+                    'target_amount': target_amount,
+                    'target_type': target_type,
+                    'target_date': target_date
                 }
                 categories_data.append(category_data)
                 category_groups[group_name].append(category_data)
@@ -162,7 +184,7 @@ def process_transactions_data(transactions_response, categories_data):
                 
                 transactions.append({
                     'date': transaction_date,
-                    'amount': -subtransaction.amount / 1000,  # Convert from millidollars and flip sign
+                    'amount': subtransaction.amount / 1000,  # Convert from millidollars
                     'category': category_name,
                     'category_group': category_group,
                     'payee_name': transaction.payee_name or "",
@@ -188,7 +210,7 @@ def process_transactions_data(transactions_response, categories_data):
             
             transactions.append({
                 'date': transaction_date,
-                'amount': -transaction.amount / 1000,  # Convert from millidollars and flip sign
+                'amount': transaction.amount / 1000,  # Convert from millidollars
                 'category': category_name,
                 'category_group': category_group,
                 'payee_name': transaction.payee_name or "",
@@ -217,14 +239,20 @@ def process_months_data(months_response, categories_data):
         if hasattr(month_data, 'categories'):
             for category in month_data.categories:
                 if category.budgeted != 0 or category.activity != 0:
-                    # Find category name
+                    # Find category name and target information
                     category_name = "Uncategorized"
                     category_group = "Uncategorized"
+                    target_amount = None
+                    target_type = None
+                    target_date = None
                     
                     for cat in categories_data:
                         if cat['id'] == category.id:
                             category_name = cat['name']
                             category_group = cat['group']
+                            target_amount = cat.get('target_amount')
+                            target_type = cat.get('target_type')
+                            target_date = cat.get('target_date')
                             break
                     
                     budget_data.append({
@@ -232,7 +260,10 @@ def process_months_data(months_response, categories_data):
                         'category_group': category_group,
                         'budgeted': category.budgeted / 1000,  # Convert from millidollars
                         'activity': category.activity / 1000,  # Convert from millidollars
-                        'available': category.balance / 1000   # Convert from millidollars
+                        'available': category.balance / 1000,   # Convert from millidollars
+                        'target_amount': target_amount,
+                        'target_type': target_type,
+                        'target_date': target_date
                     })
     
     df = pd.DataFrame(budget_data)
@@ -265,8 +296,51 @@ def calculate_forecast_trend(data, periods=3):
     
     return pd.Series(trend_line, index=data.index), pd.Series(forecast, index=future_x)
 
-def create_category_plot(category_name, transactions_df, budget_df, global_month_range):
-    """Create comprehensive plot for a single category"""
+def calculate_category_averages(category_name, transactions_df, months=12):
+    """Calculate average spending for a category over the last N months"""
+    # Filter data for this category
+    cat_transactions = transactions_df[transactions_df['category'] == category_name].copy()
+    
+    if cat_transactions.empty:
+        return 0
+    
+    # Convert date and group by month
+    cat_transactions['date'] = pd.to_datetime(cat_transactions['date'])
+    cat_transactions['month'] = cat_transactions['date'].dt.to_period('M')
+    
+    # Get monthly totals
+    monthly_expenses = cat_transactions.groupby('month')['amount'].sum()
+    
+    if monthly_expenses.empty:
+        return 0
+    
+    # Sort by month and get the last N months
+    monthly_expenses = monthly_expenses.sort_index()
+    last_n_months = monthly_expenses.tail(months)
+    
+    # Calculate average (convert to positive for display)
+    avg_amount = abs(last_n_months.mean())
+    
+    return avg_amount
+
+def calculate_category_available_budget(category_name, budget_df):
+    """Calculate available budget for a category"""
+    if budget_df.empty:
+        return 0
+    
+    # Filter budget data for this category
+    cat_budget = budget_df[budget_df['category'] == category_name]
+    
+    if cat_budget.empty:
+        return 0
+    
+    # Get the available amount for this category
+    available = cat_budget['available'].iloc[0]
+    
+    return available
+
+def create_category_plot(category_name, transactions_df, budget_df, global_month_range, categories_data):
+    """Create comprehensive plot for a single category with enhanced metrics"""
     # Filter data for this category
     cat_transactions = transactions_df[transactions_df['category'] == category_name].copy()
     
@@ -277,6 +351,88 @@ def create_category_plot(category_name, transactions_df, budget_df, global_month
     
     if cat_transactions.empty and cat_budget.empty:
         return None
+    
+    # Find target goal for this category
+    target_amount = None
+    for cat in categories_data:
+        if cat['name'] == category_name and cat.get('target_amount') is not None:
+            target_amount = cat['target_amount']
+            break
+    
+    # Calculate average metrics
+    avg_12_months = calculate_category_averages(category_name, transactions_df, 12)
+    
+    # Calculate available budget for this category
+    available_budget = calculate_category_available_budget(category_name, budget_df)
+    
+    # Create metrics row - First row
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if target_amount is not None and target_amount > 0:
+            # Calculate delta for 12-month average
+            delta_12m = avg_12_months - target_amount
+            delta_color_12m = "normal"
+            delta_text_12m = f"€{delta_12m:,.0f} vs target" if delta_12m != 0 else "On target"
+            
+            st.metric(
+                label="🎯 Target Budget",
+                value=f"€{target_amount:,.0f}",
+                # delta=delta_text_12m,
+                # delta_color=delta_color_12m
+            )
+        else:
+            st.metric(
+                label="🎯 Target Budget",
+                value="No target set"
+            )
+    
+    with col2:        
+        st.metric(
+            label="💰 Available Budget",
+            value=f"€{available_budget:,.0f}",
+        )
+    
+    # Create metrics row - Second row
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        if target_amount is not None and target_amount > 0:
+            # Calculate delta for 12-month average as percentage
+            delta_12m = avg_12_months - target_amount
+            delta_pct_12m = (delta_12m / target_amount) * 100 if target_amount > 0 else 0
+            delta_color_12m = "inverse"
+            delta_text_12m = f"{delta_pct_12m:+.1f}%" if delta_12m != 0 else "On target"
+        else:
+            delta_text_12m = None
+            delta_color_12m = "normal"
+        
+        st.metric(
+            label="📊 Last 12 Months Avg",
+            value=f"€{avg_12_months:,.0f}",
+            delta=delta_text_12m,
+            delta_color=delta_color_12m
+        )
+    
+    with col4:
+        # Calculate suggested budget: -(available_budget - (avg_12_months*12))/12
+        suggested_budget = -(available_budget - (avg_12_months * 12)) / 12
+        
+        # Calculate delta as difference ratio to target budget
+        if target_amount is not None and target_amount > 0:
+            delta_ratio = ((suggested_budget - target_amount) / target_amount) * 100
+            delta_text = f"{delta_ratio:+.1f}%"
+            delta_color = "inverse"
+        else:
+            delta_text = None
+            delta_color = "inverse"
+        
+        st.metric(
+            label="💡 Suggested Budget",
+            value=f"€{suggested_budget:,.0f}",
+            delta=delta_text,
+            delta_color=delta_color
+        )
     
     # Aggregate transactions by month
     cat_transactions['date'] = pd.to_datetime(cat_transactions['date'])
@@ -309,20 +465,20 @@ def create_category_plot(category_name, transactions_df, budget_df, global_month
         # Sort by month date for proper ordering
         complete_monthly_data = complete_monthly_data.sort_values('month_date')
         
-        # Bar chart for actual expenses (including 0 values)
+        # Bar chart for actual expenses (including 0 values) - flipped to positive side
         fig.add_trace(
             go.Bar(
                 x=complete_monthly_data['month'],
-                y=complete_monthly_data['amount'],
+                y=abs(complete_monthly_data['amount']),
                 name='Actual Expenses',
                 marker_color='#ff7f0e',
                 opacity=0.8
             )
         )
         
-        # Moving average line (if we have enough data)
+        # Moving average line (if we have enough data) - flipped to positive side
         if len(complete_monthly_data) >= 3:
-            moving_avg = calculate_moving_average(complete_monthly_data['amount'])
+            moving_avg = calculate_moving_average(abs(complete_monthly_data['amount']))
             
             fig.add_trace(
                 go.Scatter(
@@ -334,8 +490,8 @@ def create_category_plot(category_name, transactions_df, budget_df, global_month
                 )
             )
             
-            # Forecast trend line
-            trend_line, forecast = calculate_forecast_trend(complete_monthly_data['amount'])
+            # Forecast trend line - flipped to positive side
+            trend_line, forecast = calculate_forecast_trend(abs(complete_monthly_data['amount']))
             
             fig.add_trace(
                 go.Scatter(
@@ -347,7 +503,7 @@ def create_category_plot(category_name, transactions_df, budget_df, global_month
                 )
             )
             
-            # Add forecast extension
+            # Add forecast extension - flipped to positive side
             future_months = pd.date_range(
                 start=complete_monthly_data['month_date'].iloc[-1] + pd.DateOffset(months=1),
                 periods=3,
@@ -357,37 +513,34 @@ def create_category_plot(category_name, transactions_df, budget_df, global_month
             fig.add_trace(
                 go.Scatter(
                     x=future_months.strftime('%Y-%m'),
-                    y=forecast,
+                    y=abs(forecast),
                     name='Forecast (Next 3 Months)',
                     line=dict(color='#d62728', width=2, dash='dot'),
                     mode='lines'
                 )
             )
         
-        # Add budget line if available
-        if not cat_budget.empty and 'budgeted' in cat_budget.columns:
-            budget_amount = cat_budget['budgeted'].iloc[0]
-            if budget_amount > 0:
-                # Create a horizontal line across all months
-                all_months = complete_monthly_data['month'].tolist()
-                if len(complete_monthly_data) >= 3 and 'future_months' in locals():
-                    # Include future months in the budget line
-                    future_month_strs = future_months.strftime('%Y-%m').tolist()
-                    all_months.extend(future_month_strs)
-                
-                fig.add_trace(
-                    go.Scatter(
-                        x=all_months,
-                        y=[budget_amount] * len(all_months),
-                        name=f'Monthly Budget (€{budget_amount:,.0f})',
-                        line=dict(color='#2ca02c', width=3),
-                        mode='lines'
-                    )
+        # Add target goal line if available
+        if target_amount is not None and target_amount > 0:
+            # Create a horizontal line across all months
+            all_months = complete_monthly_data['month'].tolist()
+            if len(complete_monthly_data) >= 3 and 'future_months' in locals():
+                # Include future months in the target line
+                future_month_strs = future_months.strftime('%Y-%m').tolist()
+                all_months.extend(future_month_strs)
+            
+            fig.add_trace(
+                go.Scatter(
+                    x=all_months,
+                    y=[target_amount] * len(all_months),
+                    name=f'Target Goal (€{target_amount:,.0f})',
+                    line=dict(color='#2ca02c', width=3, dash='solid'),
+                    mode='lines'
                 )
+            )
     
     # Update layout
     fig.update_layout(
-        title=f'{category_name} - Comprehensive Analysis',
         height=400,
         showlegend=False,
         hovermode='x unified',
@@ -397,6 +550,19 @@ def create_category_plot(category_name, transactions_df, budget_df, global_month
     )
     
     return fig
+
+def filter_data_by_date_range(transactions_df, start_date, end_date):
+    """Filter transactions dataframe by date range"""
+    if transactions_df.empty:
+        return transactions_df
+    
+    # Ensure date column is datetime
+    filtered_df = transactions_df.copy()
+    filtered_df['date'] = pd.to_datetime(filtered_df['date'])
+    
+    # Filter by date range
+    mask = (filtered_df['date'] >= pd.Timestamp(start_date)) & (filtered_df['date'] <= pd.Timestamp(end_date))
+    return filtered_df[mask]
 
 def main():
     st.markdown('<h1 class="main-header">📋 Individual Category Analysis</h1>', unsafe_allow_html=True)
@@ -429,51 +595,130 @@ def main():
     budget_df = process_months_data(months_response, categories_data)
     
     # Filter out transactions with excluded category groups
-    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments']
+    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments', 'Hidden Categories']
     filtered_transactions_df = transactions_df[~transactions_df['category_group'].isin(excluded_groups)].copy()
+    
+    # Sidebar date picker
+    st.sidebar.header("📅 Date Range Filter")
+    
+    # Calculate default date range (last day of prior month)
+    today = date.today()
+    
+    # Get the first day of current month, then subtract 1 day to get last day of prior month
+    first_day_current_month = date(today.year, today.month, 1)
+    last_day_prior_month = first_day_current_month - timedelta(days=1)
+    
+    default_end_date = last_day_prior_month
+    default_start_date = default_end_date - timedelta(days=365)  # 1 year before end date
+    
+    # Get the actual date range from the data
+    if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
+        filtered_transactions_df['date'] = pd.to_datetime(filtered_transactions_df['date'])
+        data_start_date = filtered_transactions_df['date'].min().date()
+        data_end_date = filtered_transactions_df['date'].max().date()
+        
+        # Use data range as defaults if available, but cap end date to last day of prior month
+        default_start_date = data_start_date
+        default_end_date = min(data_end_date, default_end_date)
+    
+    # Date picker in sidebar
+    start_date = st.sidebar.date_input(
+        "Start Date",
+        value=default_start_date,
+        min_value=date(2010, 1, 1),
+        max_value=today,
+        help="Select the start date for filtering data"
+    )
+    
+    end_date = st.sidebar.date_input(
+        "End Date",
+        value=default_end_date,
+        min_value=date(2010, 1, 1),
+        max_value=today,
+        help="Select the end date for filtering data"
+    )
+    
+    # Validate date range
+    if start_date > end_date:
+        st.sidebar.error("Start date must be before end date!")
+        return
+    
+    # Apply date filtering
+    filtered_transactions_df = filter_data_by_date_range(filtered_transactions_df, start_date, end_date)
+    
+    # Show date range info in sidebar
+    # Safely handle earliest_date/latest_date for info display
+    def safe_strftime(dt):
+        try:
+            if pd.isna(dt):
+                return "N/A"
+            return dt.strftime('%Y-%m') if hasattr(dt, 'strftime') else str(dt)
+        except Exception:
+            return str(dt)
+    start_str = safe_strftime(start_date)
+    end_str = safe_strftime(end_date)
+    st.info(f"Date range: {start_str} to {end_str}")
+    
+    # Calculate global month range from filtered data
+    if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
+        all_transactions = filtered_transactions_df.copy()
+        all_transactions['date'] = pd.to_datetime(all_transactions['date'])
+        all_transactions = all_transactions.reset_index(drop=True)
+        all_transactions['month'] = all_transactions['date'].dt.to_period('M')
+        # Get the earliest and latest months from filtered data
+        earliest_month = all_transactions['month'].min()
+        latest_month = all_transactions['month'].max()
+        # Convert to datetime for date_range, handle NaTType
+        if pd.isna(earliest_month) or pd.isna(latest_month):
+            global_month_range = pd.date_range(start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq='MS')
+            earliest_date = pd.Timestamp(start_date)
+            latest_date = pd.Timestamp(end_date)
+        else:
+            earliest_date = earliest_month.to_timestamp() if hasattr(earliest_month, 'to_timestamp') else pd.Timestamp(start_date)
+            latest_date = latest_month.to_timestamp() if hasattr(latest_month, 'to_timestamp') else pd.Timestamp(end_date)
+            global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='MS')
+    else:
+        global_month_range = pd.date_range(start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq='MS')
+        earliest_date = pd.Timestamp(start_date)
+        latest_date = pd.Timestamp(end_date)
     
     # Get all category names (excluding the specified groups)
     category_names = sorted([cat['name'] for cat in categories_data])
     
-    # Calculate global month range from all categories
-    all_transactions = filtered_transactions_df.copy()
-    all_transactions['date'] = pd.to_datetime(all_transactions['date'])
-    # Ensure the date column is a pandas Series before accessing .dt
-    all_transactions = all_transactions.reset_index(drop=True)
-    all_transactions['month'] = all_transactions['date'].dt.to_period('M')
+    # Safely handle earliest_date/latest_date for info display
+    start_str = safe_strftime(earliest_date)
+    end_str = safe_strftime(latest_date)
+    st.info(f"Date range: {start_str} to {end_str}")
     
-    # Get the earliest and latest months from all data
-    earliest_month = all_transactions['month'].min()
-    latest_month = all_transactions['month'].max()
+    # Category selection
+    st.header("📊 Category Analysis")
     
-    # Convert to datetime for date_range
-    earliest_date = earliest_month.to_timestamp()
-    latest_date = latest_month.to_timestamp()
+    # Set default values for multiselect
+    default_categories = ["Groceries", "Dining Out", "Transportation"]
+    # Filter default categories to only include those that exist in the data
+    available_defaults = [cat for cat in default_categories if cat in category_names]
     
-    # Always include current month, even if there are no transactions
-    current_month = pd.Timestamp.now().replace(day=1)
-    if current_month > latest_date:
-        latest_date = current_month
+    selected_categories = st.multiselect(
+        "Select categories to display:",
+        options=category_names,
+        default=available_defaults,
+        help="Choose which categories to include in the analysis. Leave empty to show all categories."
+    )
     
-    # Create global month range using month start frequency to ensure all months are included
-    global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='MS')
-    
-    st.info(f"Displaying analysis for {len(category_names)} categories (excluding Internal Master Category, Uncategorized, and Credit Card Payments)")
-    st.info(f"Date range: {earliest_date.strftime('%Y-%m')} to {latest_date.strftime('%Y-%m')}")
-    
-    # Display all category plots in a grid
-    st.header("📊 All Category Plots")
+    # If no categories are selected, show all categories
+    if not selected_categories:
+        selected_categories = category_names
     
     # Create a grid layout for the plots
     cols_per_row = 2
-    for i in range(0, len(category_names), cols_per_row):
+    for i in range(0, len(selected_categories), cols_per_row):
         cols = st.columns(cols_per_row)
         for j, col in enumerate(cols):
-            if i + j < len(category_names):
-                category_name = category_names[i + j]
+            if i + j < len(selected_categories):
+                category_name = selected_categories[i + j]
                 with col:
                     st.subheader(category_name)
-                    category_fig = create_category_plot(category_name, filtered_transactions_df, budget_df, global_month_range)
+                    category_fig = create_category_plot(category_name, filtered_transactions_df, budget_df, global_month_range, categories_data)
                     if category_fig:
                         st.plotly_chart(category_fig, use_container_width=True)
                     else:
@@ -534,20 +779,13 @@ def main():
     st.info(filter_info)
     
     # Display the raw data
-    if not filtered_raw_data.empty:
-        # Format the data for display
-        display_data = filtered_raw_data.copy()
-        display_data['date'] = pd.to_datetime(display_data['date']).dt.strftime('%Y-%m-%d')
+    if isinstance(filtered_raw_data, pd.DataFrame) and not filtered_raw_data.empty:
+        display_data = pd.DataFrame(filtered_raw_data)
+        display_data['date'] = display_data['date'].apply(str)
         display_data['amount'] = display_data['amount'].round(2)
-        
-        # Reorder columns for better display
         column_order = ['date', 'category', 'category_group', 'amount', 'payee_name', 'memo', 'is_income']
-        display_data = display_data[column_order]
-        
-        # Ensure display_data is a proper DataFrame before renaming
-        display_data = pd.DataFrame(display_data)
-        
-        # Rename columns for better display
+        if all(col in display_data.columns for col in column_order):
+            display_data = display_data[column_order]
         display_data = display_data.rename(columns={
             'date': 'Date',
             'category': 'Category',
@@ -557,7 +795,6 @@ def main():
             'memo': 'Memo',
             'is_income': 'Is Income'
         })
-        
         st.dataframe(
             display_data,
             use_container_width=True,
