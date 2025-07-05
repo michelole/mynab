@@ -6,21 +6,28 @@ from plotly.subplots import make_subplots
 import numpy as np
 from datetime import datetime, timedelta, date
 from mynab.utils import (
-    calculate_moving_average, calculate_forecast_trend, calculate_category_averages,
-    calculate_category_available_budget, filter_data_by_date_range, safe_strftime,
-    get_global_month_range, get_excluded_groups, get_default_categories,
-    create_unified_plot
+    calculate_moving_average,
+    calculate_forecast_trend,
+    calculate_category_averages,
+    calculate_category_available_budget,
+    filter_data_by_date_range,
+    safe_strftime,
+    get_global_month_range,
+    get_excluded_groups,
+    get_default_categories,
+    create_unified_plot,
 )
 
 # Page configuration
 st.set_page_config(
     page_title="Individual Category Analysis - YNAB Dashboard",
     page_icon="📋",
-    layout="wide"
+    layout="wide",
 )
 
 # Custom CSS for better styling
-st.markdown("""
+st.markdown(
+    """
 <style>
     .main-header {
         font-size: 2.5rem;
@@ -43,24 +50,36 @@ st.markdown("""
         margin-bottom: 2rem;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
-
-def create_category_plot(category_name, transactions_df, budget_df, global_month_range, categories_data):
+def create_category_plot(
+    category_name, transactions_df, budget_df, global_month_range, categories_data
+):
     """Create comprehensive plot for a single category with enhanced metrics"""
-    return create_unified_plot(category_name, transactions_df, budget_df, global_month_range, categories_data, 'category')
-
+    return create_unified_plot(
+        category_name,
+        transactions_df,
+        budget_df,
+        global_month_range,
+        categories_data,
+        "category",
+    )
 
 
 def main():
-    st.markdown('<h1 class="main-header">📋 Individual Category Analysis</h1>', unsafe_allow_html=True)
-    
+    st.markdown(
+        '<h1 class="main-header">📋 Individual Category Analysis</h1>',
+        unsafe_allow_html=True,
+    )
+
     # Check if data is loaded in session state
-    if not st.session_state.get('data_loaded', False):
+    if not st.session_state.get("data_loaded", False):
         st.error("Data not loaded. Please go to the main page first.")
         return
-    
+
     # Get data from session state
     transactions_df = st.session_state.transactions_df
     budget_df = st.session_state.budget_df
@@ -69,87 +88,119 @@ def main():
     start_date = st.session_state.start_date
     end_date = st.session_state.end_date
     selected_category_groups = st.session_state.selected_category_groups
-    
+
     if transactions_df is None or budget_df is None or categories_data is None:
         st.error("Data not available. Please go to the main page first.")
         return
-    
+
     # Filter out transactions with excluded category groups
     excluded_groups = get_excluded_groups()
-    filtered_transactions_df = transactions_df[~transactions_df['category_group'].isin(excluded_groups)].copy()
-    
+    filtered_transactions_df = transactions_df[
+        ~transactions_df["category_group"].isin(excluded_groups)
+    ].copy()
+
     # Apply date filtering
-    filtered_transactions_df = filter_data_by_date_range(filtered_transactions_df, start_date, end_date)
-    
+    filtered_transactions_df = filter_data_by_date_range(
+        filtered_transactions_df, start_date, end_date
+    )
+
     # Filter categories based on selected groups
-    filtered_categories_data = [cat for cat in categories_data if cat['group'] in selected_category_groups]
-    filtered_category_names = [cat['name'] for cat in filtered_categories_data]
-    
+    filtered_categories_data = [
+        cat for cat in categories_data if cat["group"] in selected_category_groups
+    ]
+    filtered_category_names = [cat["name"] for cat in filtered_categories_data]
+
     # Filter transactions to only include selected category groups
-    if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
-        filtered_transactions_df = filtered_transactions_df[filtered_transactions_df['category_group'].isin(selected_category_groups)].copy()
-    
+    if (
+        isinstance(filtered_transactions_df, pd.DataFrame)
+        and not filtered_transactions_df.empty
+    ):
+        filtered_transactions_df = filtered_transactions_df[
+            filtered_transactions_df["category_group"].isin(selected_category_groups)
+        ].copy()
+
     # Filter budget data to only include selected category groups
-    if budget_df is not None and isinstance(budget_df, pd.DataFrame) and not budget_df.empty:
-        budget_df = budget_df[budget_df['category_group'].isin(selected_category_groups)].copy()
-    
+    if (
+        budget_df is not None
+        and isinstance(budget_df, pd.DataFrame)
+        and not budget_df.empty
+    ):
+        budget_df = budget_df[
+            budget_df["category_group"].isin(selected_category_groups)
+        ].copy()
+
     # Calculate summary metrics
     def calculate_summary_metrics(categories_data, budget_df, filtered_transactions_df):
         """Calculate summary metrics for all categories"""
         # Total target budget
         total_target_budget = sum(
-            cat.get('target_amount', 0) or 0 
-            for cat in categories_data 
-            if cat.get('target_amount') is not None
+            cat.get("target_amount", 0) or 0
+            for cat in categories_data
+            if cat.get("target_amount") is not None
         )
-        
+
         # Total available budget
-        total_available_budget = budget_df['available'].sum() if not budget_df.empty else 0
-        
+        total_available_budget = (
+            budget_df["available"].sum() if not budget_df.empty else 0
+        )
+
         # Last 12 months average for all transactions
         if not filtered_transactions_df.empty:
             # Use all transactions (both income and expenses)
             all_transactions_df = filtered_transactions_df.copy()
-            all_transactions_df['date'] = pd.to_datetime(all_transactions_df['date'])
-            all_transactions_df['month'] = all_transactions_df['date'].dt.to_period('M')
-            monthly_totals = all_transactions_df.groupby('month')['amount'].sum()
+            all_transactions_df["date"] = pd.to_datetime(all_transactions_df["date"])
+            all_transactions_df["month"] = all_transactions_df["date"].dt.to_period("M")
+            monthly_totals = all_transactions_df.groupby("month")["amount"].sum()
             if len(monthly_totals) >= 12:
                 last_12_months_avg = abs(monthly_totals.tail(12).mean())
             else:
-                last_12_months_avg = abs(monthly_totals.mean()) if not monthly_totals.empty else 0
+                last_12_months_avg = (
+                    abs(monthly_totals.mean()) if not monthly_totals.empty else 0
+                )
         else:
             last_12_months_avg = 0
-        
+
         # Sum of suggested budgets
         total_suggested_budget = 0
         for cat in categories_data:
-            category_name = cat['name']
-            avg_12_months = calculate_category_averages(category_name, filtered_transactions_df, 12)
-            available_budget = calculate_category_available_budget(category_name, budget_df)
+            category_name = cat["name"]
+            avg_12_months = calculate_category_averages(
+                category_name, filtered_transactions_df, 12
+            )
+            available_budget = calculate_category_available_budget(
+                category_name, budget_df
+            )
             suggested_budget = -(available_budget - (avg_12_months * 12)) / 12
             total_suggested_budget += suggested_budget
-        
-        return total_target_budget, total_available_budget, last_12_months_avg, total_suggested_budget
-    
+
+        return (
+            total_target_budget,
+            total_available_budget,
+            last_12_months_avg,
+            total_suggested_budget,
+        )
+
     # Calculate summary metrics
-    total_target, total_available, last_12m_avg, total_suggested = calculate_summary_metrics(
-        filtered_categories_data, budget_df, filtered_transactions_df
+    total_target, total_available, last_12m_avg, total_suggested = (
+        calculate_summary_metrics(
+            filtered_categories_data, budget_df, filtered_transactions_df
+        )
     )
-    
+
     # Display summary metrics at the top
     st.header("📊 Summary Metrics")
-    
+
     # Create metrics in a 2x2 grid (matching individual category order)
     col1, col2 = st.columns(2)
-    
+
     with col1:
         # Target Budget - no delta for total target
         st.metric(
             label="🎯 Total Target Budget",
             value=f"€{total_target:,.0f}",
-            help="Sum of all category target budgets"
+            help="Sum of all category target budgets",
         )
-        
+
         # Last 12 Months Average - delta as percentage vs target
         if total_target > 0:
             delta_12m = last_12m_avg - total_target
@@ -159,23 +210,23 @@ def main():
         else:
             delta_text_12m = None
             delta_color_12m = "normal"
-        
+
         st.metric(
             label="📊 Last 12 Months Average",
             value=f"€{last_12m_avg:,.0f}",
             delta=delta_text_12m,
             delta_color=delta_color_12m,
-            help="Average monthly expenses over the last 12 months"
+            help="Average monthly expenses over the last 12 months",
         )
-    
+
     with col2:
         # Available Budget - no delta
         st.metric(
             label="💰 Total Available Budget",
             value=f"€{total_available:,.0f}",
-            help="Sum of all category available budgets"
+            help="Sum of all category available budgets",
         )
-        
+
         # Suggested Budget - delta as percentage vs target
         if total_target > 0:
             delta_ratio = ((total_suggested - total_target) / total_target) * 100
@@ -184,42 +235,46 @@ def main():
         else:
             delta_text = None
             delta_color = "inverse"
-        
+
         st.metric(
             label="💡 Total Suggested Budget",
             value=f"€{total_suggested:,.0f}",
             delta=delta_text,
             delta_color=delta_color,
-            help="Sum of all category suggested budgets"
+            help="Sum of all category suggested budgets",
         )
-    
+
     # Calculate global month range from filtered data
-    global_month_range, earliest_date, latest_date = get_global_month_range(filtered_transactions_df, start_date, end_date)
-    
+    global_month_range, earliest_date, latest_date = get_global_month_range(
+        filtered_transactions_df, start_date, end_date
+    )
+
     # Display date range info
     start_str = safe_strftime(earliest_date)
     end_str = safe_strftime(latest_date)
     st.info(f"Date range: {start_str} to {end_str}")
-    
+
     # Category selection
     st.header("📊 Category Analysis")
-    
+
     # Set default values for multiselect
     default_categories = get_default_categories()
     # Filter default categories to only include those that exist in the filtered data
-    available_defaults = [cat for cat in default_categories if cat in filtered_category_names]
-    
+    available_defaults = [
+        cat for cat in default_categories if cat in filtered_category_names
+    ]
+
     selected_categories = st.multiselect(
         "Select categories to display:",
         options=filtered_category_names,
         default=available_defaults,
-        help="Choose which categories to include in the analysis. Leave empty to show all categories from selected groups."
+        help="Choose which categories to include in the analysis. Leave empty to show all categories from selected groups.",
     )
-    
+
     # If no categories are selected, show all categories from selected groups
     if not selected_categories:
         selected_categories = filtered_category_names
-    
+
     # Create a grid layout for the plots
     cols_per_row = 2
     for i in range(0, len(selected_categories), cols_per_row):
@@ -229,7 +284,13 @@ def main():
                 category_name = selected_categories[i + j]
                 with col:
                     st.subheader(category_name)
-                    category_fig = create_category_plot(category_name, filtered_transactions_df, budget_df, global_month_range, categories_data)
+                    category_fig = create_category_plot(
+                        category_name,
+                        filtered_transactions_df,
+                        budget_df,
+                        global_month_range,
+                        categories_data,
+                    )
                     if category_fig:
                         st.plotly_chart(category_fig, use_container_width=True)
                     else:
@@ -237,13 +298,13 @@ def main():
 
     # Raw Data Section
     st.header("📋 Raw Transaction Data")
-    
+
     # Category filter for raw data
     st.subheader("Filter Options")
-    
+
     # Create two columns for filters
     filter_col1, filter_col2 = st.columns(2)
-    
+
     with filter_col1:
         # Add "All Categories" option (categories are already in API order)
         all_categories_option = ["All Categories"] + filtered_category_names
@@ -251,78 +312,102 @@ def main():
             "Select Category to Filter:",
             options=all_categories_option,
             index=0,
-            help="Choose a specific category or 'All Categories' to see all transactions"
+            help="Choose a specific category or 'All Categories' to see all transactions",
         )
-    
+
     with filter_col2:
         # Split transaction filter
-        if isinstance(filtered_transactions_df, pd.DataFrame) and 'is_subtransaction' in filtered_transactions_df.columns:
-            split_filter_options = ['All Transactions', 'Regular Transactions Only', 'Split Transactions Only']
+        if (
+            isinstance(filtered_transactions_df, pd.DataFrame)
+            and "is_subtransaction" in filtered_transactions_df.columns
+        ):
+            split_filter_options = [
+                "All Transactions",
+                "Regular Transactions Only",
+                "Split Transactions Only",
+            ]
             selected_split_filter = st.selectbox(
                 "Filter by Transaction Type:",
                 options=split_filter_options,
                 index=0,
-                help="Choose to view all transactions, only regular transactions, or only split transactions"
+                help="Choose to view all transactions, only regular transactions, or only split transactions",
             )
         else:
-            selected_split_filter = 'All Transactions'
-    
+            selected_split_filter = "All Transactions"
+
     # Filter data based on selections
     filtered_raw_data = filtered_transactions_df.copy()
-    
+
     # Apply category filter
     if selected_category != "All Categories":
-        filtered_raw_data = filtered_raw_data[filtered_raw_data['category'] == selected_category]
-    
+        filtered_raw_data = filtered_raw_data[
+            filtered_raw_data["category"] == selected_category
+        ]
+
     # Apply split transaction filter
-    if selected_split_filter == 'Regular Transactions Only':
-        filtered_raw_data = filtered_raw_data[filtered_raw_data['is_subtransaction'] == False]
-    elif selected_split_filter == 'Split Transactions Only':
-        filtered_raw_data = filtered_raw_data[filtered_raw_data['is_subtransaction'] == True]
-    
+    if selected_split_filter == "Regular Transactions Only":
+        filtered_raw_data = filtered_raw_data[
+            filtered_raw_data["is_subtransaction"] == False
+        ]
+    elif selected_split_filter == "Split Transactions Only":
+        filtered_raw_data = filtered_raw_data[
+            filtered_raw_data["is_subtransaction"] == True
+        ]
+
     # Ensure it's a DataFrame
     filtered_raw_data = pd.DataFrame(filtered_raw_data)
-    
+
     # Display data info
-    filter_info = f"Showing {len(filtered_raw_data)} transactions for: **{selected_category}**"
-    if selected_split_filter != 'All Transactions':
+    filter_info = (
+        f"Showing {len(filtered_raw_data)} transactions for: **{selected_category}**"
+    )
+    if selected_split_filter != "All Transactions":
         filter_info += f" ({selected_split_filter.lower()})"
     st.info(filter_info)
-    
+
     # Display the raw data
     if isinstance(filtered_raw_data, pd.DataFrame) and not filtered_raw_data.empty:
         display_data = pd.DataFrame(filtered_raw_data)
-        display_data['date'] = display_data['date'].apply(str)
-        display_data['amount'] = display_data['amount'].round(2)
-        column_order = ['date', 'category', 'category_group', 'amount', 'payee_name', 'memo', 'is_income']
-        if isinstance(display_data, pd.DataFrame) and all(col in display_data.columns for col in column_order):
+        display_data["date"] = display_data["date"].apply(str)
+        display_data["amount"] = display_data["amount"].round(2)
+        column_order = [
+            "date",
+            "category",
+            "category_group",
+            "amount",
+            "payee_name",
+            "memo",
+            "is_income",
+        ]
+        if isinstance(display_data, pd.DataFrame) and all(
+            col in display_data.columns for col in column_order
+        ):
             display_data = display_data[column_order]
         display_data = pd.DataFrame(display_data)
-        display_data = display_data.rename(columns={
-            'date': 'Date',
-            'category': 'Category',
-            'category_group': 'Category Group',
-            'amount': 'Amount (€)',
-            'payee_name': 'Payee',
-            'memo': 'Memo',
-            'is_income': 'Is Income'
-        })
-        st.dataframe(
-            display_data,
-            use_container_width=True,
-            hide_index=True
+        display_data = display_data.rename(
+            columns={
+                "date": "Date",
+                "category": "Category",
+                "category_group": "Category Group",
+                "amount": "Amount (€)",
+                "payee_name": "Payee",
+                "memo": "Memo",
+                "is_income": "Is Income",
+            }
         )
-        
+        st.dataframe(display_data, use_container_width=True, hide_index=True)
+
         # Download button for filtered data
         csv = display_data.to_csv(index=False)
         st.download_button(
             label="Download filtered data as CSV",
             data=csv,
             file_name=f"ynab_transactions_{selected_category.replace(' ', '_').lower()}_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv"
+            mime="text/csv",
         )
     else:
         st.warning(f"No transactions found for category: {selected_category}")
 
+
 if __name__ == "__main__":
-    main() 
+    main()
