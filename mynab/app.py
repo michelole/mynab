@@ -351,20 +351,20 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
         # Sort by month date for proper ordering
         complete_monthly_data = complete_monthly_data.sort_values('month_date')
         
-        # Bar chart for actual expenses (including 0 values)
+        # Bar chart for actual expenses (including 0 values) - flipped to positive side
         fig.add_trace(
             go.Bar(
                 x=complete_monthly_data['month'],
-                y=complete_monthly_data['amount'],
+                y=abs(complete_monthly_data['amount']),
                 name='Actual Expenses',
                 marker_color='#ff7f0e',
                 opacity=0.8
             )
         )
         
-        # Moving average line (if we have enough data)
+        # Moving average line (if we have enough data) - flipped to positive side
         if len(complete_monthly_data) >= 3:
-            moving_avg = calculate_moving_average(complete_monthly_data['amount'])
+            moving_avg = calculate_moving_average(abs(complete_monthly_data['amount']))
             
             fig.add_trace(
                 go.Scatter(
@@ -376,8 +376,8 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
                 )
             )
             
-            # Forecast trend line
-            trend_line, forecast = calculate_forecast_trend(complete_monthly_data['amount'])
+            # Forecast trend line - flipped to positive side
+            trend_line, forecast = calculate_forecast_trend(abs(complete_monthly_data['amount']))
             
             fig.add_trace(
                 go.Scatter(
@@ -389,7 +389,7 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
                 )
             )
             
-            # Add forecast extension
+            # Add forecast extension - flipped to positive side
             future_months = pd.date_range(
                 start=complete_monthly_data['month_date'].iloc[-1] + pd.DateOffset(months=1),
                 periods=3,
@@ -399,7 +399,7 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
             fig.add_trace(
                 go.Scatter(
                     x=future_months.strftime('%Y-%m'),
-                    y=forecast,
+                    y=abs(forecast),
                     name='Forecast (Next 3 Months)',
                     line=dict(color='#d62728', width=2, dash='dot'),
                     mode='lines'
@@ -526,20 +526,28 @@ def create_comprehensive_plot(data_type, transactions_df, budget_df, global_mont
     # Create single comprehensive plot
     fig = go.Figure()
     
-    # Bar chart for actual amounts
+    # Bar chart for actual amounts - flip expenses to positive side
+    y_values = complete_monthly_data['amount']
+    if data_type == 'total_expense':
+        y_values = abs(complete_monthly_data['amount'])
+    
     fig.add_trace(
         go.Bar(
             x=complete_monthly_data['month'],
-            y=complete_monthly_data['amount'],
+            y=y_values,
             name=f'Actual {data_type.replace("_", " ").title()}',
             marker_color=color,
             opacity=0.8
         )
     )
     
-    # Moving average line (if we have enough data)
+    # Moving average line (if we have enough data) - flip expenses to positive side
     if len(complete_monthly_data) >= 3:
-        moving_avg = calculate_moving_average(complete_monthly_data['amount'])
+        data_for_calculation = complete_monthly_data['amount']
+        if data_type == 'total_expense':
+            data_for_calculation = abs(complete_monthly_data['amount'])
+        
+        moving_avg = calculate_moving_average(data_for_calculation)
         
         fig.add_trace(
             go.Scatter(
@@ -551,8 +559,8 @@ def create_comprehensive_plot(data_type, transactions_df, budget_df, global_mont
             )
         )
         
-        # Forecast trend line
-        trend_line, forecast = calculate_forecast_trend(complete_monthly_data['amount'])
+        # Forecast trend line - flip expenses to positive side
+        trend_line, forecast = calculate_forecast_trend(data_for_calculation)
         
         fig.add_trace(
             go.Scatter(
@@ -564,17 +572,21 @@ def create_comprehensive_plot(data_type, transactions_df, budget_df, global_mont
             )
         )
         
-        # Add forecast extension
+        # Add forecast extension - flip expenses to positive side
         future_months = pd.date_range(
             start=complete_monthly_data['month_date'].iloc[-1] + pd.DateOffset(months=1),
             periods=3,
             freq='MS'
         )
         
+        forecast_values = forecast
+        if data_type == 'total_expense':
+            forecast_values = abs(forecast)
+        
         fig.add_trace(
             go.Scatter(
                 x=future_months.strftime('%Y-%m'),
-                y=forecast,
+                y=forecast_values,
                 name='Forecast (Next 3 Months)',
                 line=dict(color='#d62728', width=2, dash='dot'),
                 mode='lines'
