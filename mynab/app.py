@@ -604,8 +604,8 @@ def main():
         earliest_date = pd.Timestamp(start_date)
         latest_date = pd.Timestamp(end_date)
     
-    # Display summary metrics
-    col1, col2, col3, col4 = st.columns(4)
+    # Display summary metrics - Row 1 (Totals)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         # Include only transactions with a category group
@@ -624,6 +624,15 @@ def main():
         st.metric("Total Income", f"€{total_income:,.2f}")
     
     with col3:
+        # Calculate total net income (income - expenses)
+        # Since expenses are already negative in YNAB, we add them to income
+        total_net_income = total_income + total_expenses
+        st.metric("Total Net Income", f"€{total_net_income:,.2f}")
+    
+    # Display summary metrics - Row 2 (Averages)
+    col4, col5, col6 = st.columns(3)
+    
+    with col4:
         # Create a copy for calculations to avoid modifying the original
         if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
             calc_df = filtered_transactions_df.copy()
@@ -645,9 +654,67 @@ def main():
         else:
             st.metric("Avg Monthly Expenses", "€0.00")
     
-    with col4:
-        num_transactions = len(filtered_transactions_df)
-        st.metric("Total Transactions", num_transactions)
+    with col5:
+        # Calculate average monthly income
+        if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
+            # Filter for income transactions
+            income_transactions = filtered_transactions_df[
+                (filtered_transactions_df['category'] == 'Inflow: Ready to Assign') & 
+                (filtered_transactions_df['payee_name'] != 'Starting Balance')
+            ].copy()
+            
+            if not income_transactions.empty:
+                # Ensure date column is properly converted to datetime
+                income_transactions['date'] = pd.to_datetime(income_transactions['date'])
+                # Group by month and calculate average
+                monthly_income = income_transactions.groupby(income_transactions['date'].dt.to_period('M'))['amount'].sum()
+                avg_monthly_income = monthly_income.mean()
+                st.metric("Avg Monthly Income", f"€{avg_monthly_income:,.2f}")
+            else:
+                st.metric("Avg Monthly Income", "€0.00")
+        else:
+            st.metric("Avg Monthly Income", "€0.00")
+    
+    with col6:
+        # Calculate average monthly net income
+        if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
+            # Get monthly income and expenses
+            calc_df = filtered_transactions_df.copy()
+            calc_df['date'] = pd.to_datetime(calc_df['date'])
+            
+            # Monthly income
+            income_transactions = calc_df[
+                (calc_df['category'] == 'Inflow: Ready to Assign') & 
+                (calc_df['payee_name'] != 'Starting Balance')
+            ]
+            
+            # Monthly expenses
+            expense_transactions = calc_df[
+                (calc_df['category_group'].astype(str) != 'nan') & 
+                (calc_df['category_group'].astype(str) != '')
+            ]
+            
+            if not income_transactions.empty or not expense_transactions.empty:
+                # Group by month and calculate net income
+                monthly_income = income_transactions.groupby(income_transactions['date'].dt.to_period('M'))['amount'].sum()
+                monthly_expenses = expense_transactions.groupby(expense_transactions['date'].dt.to_period('M'))['amount'].sum()
+                
+                # Combine months and calculate net income
+                all_months = pd.concat([monthly_income, monthly_expenses]).index.unique()
+                monthly_net_income = pd.Series(index=all_months, dtype=float)
+                
+                for month in all_months:
+                    income_amount = monthly_income.get(month, 0)
+                    expense_amount = monthly_expenses.get(month, 0)
+                    # Since expenses are already negative in YNAB, we add them to income
+                    monthly_net_income[month] = income_amount + expense_amount
+                
+                avg_monthly_net_income = monthly_net_income.mean()
+                st.metric("Avg Monthly Net Income", f"€{avg_monthly_net_income:,.2f}")
+            else:
+                st.metric("Avg Monthly Net Income", "€0.00")
+        else:
+            st.metric("Avg Monthly Net Income", "€0.00")
     
     st.markdown("---")
     
