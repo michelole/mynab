@@ -682,8 +682,8 @@ def main():
         earliest_date = pd.Timestamp(start_date)
         latest_date = pd.Timestamp(end_date)
     
-    # Get all category names (excluding the specified groups)
-    category_names = sorted([cat['name'] for cat in categories_data])
+    # Get all category names in the order received from the API (excluding the specified groups)
+    category_names = [cat['name'] for cat in categories_data]
     
     # Safely handle earliest_date/latest_date for info display
     start_str = safe_strftime(earliest_date)
@@ -734,7 +734,7 @@ def main():
     filter_col1, filter_col2 = st.columns(2)
     
     with filter_col1:
-        # Add "All Categories" option
+        # Add "All Categories" option (categories are already in API order)
         all_categories_option = ["All Categories"] + category_names
         selected_category = st.selectbox(
             "Select Category to Filter:",
