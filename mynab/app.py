@@ -296,6 +296,33 @@ def calculate_forecast_trend(data, periods=3):
     
     return pd.Series(trend_line, index=data.index), pd.Series(forecast, index=future_x)
 
+def calculate_category_group_averages(group_name, transactions_df, months=3):
+    """Calculate average spending for a category group over the last N months"""
+    # Filter data for this category group
+    group_transactions = transactions_df[transactions_df['category_group'] == group_name].copy()
+    
+    if group_transactions.empty:
+        return 0
+    
+    # Convert date and group by month
+    group_transactions['date'] = pd.to_datetime(group_transactions['date'])
+    group_transactions['month'] = group_transactions['date'].dt.to_period('M')
+    
+    # Get monthly totals
+    monthly_expenses = group_transactions.groupby('month')['amount'].sum()
+    
+    if monthly_expenses.empty:
+        return 0
+    
+    # Sort by month and get the last N months
+    monthly_expenses = monthly_expenses.sort_index()
+    last_n_months = monthly_expenses.tail(months)
+    
+    # Calculate average (convert to positive for display)
+    avg_amount = abs(last_n_months.mean())
+    
+    return avg_amount
+
 def create_category_group_plot(group_name, transactions_df, budget_df, global_month_range, categories_data):
     """Create comprehensive plot for a single category group"""
     # Filter data for this category group
@@ -313,13 +340,49 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
             group_target_amount += cat['target_amount']
             categories_with_targets.append(cat)
     
-    # Create target goal metric card
-    if group_target_amount > 0:
+    # Calculate average metrics
+    avg_3_months = calculate_category_group_averages(group_name, transactions_df, 3)
+    
+    # Create metrics row
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if group_target_amount > 0:
+            # Calculate delta for 3-month average
+            delta_3m = avg_3_months - group_target_amount
+            delta_color_3m = "normal" if delta_3m <= 0 else "inverse"
+            delta_text_3m = f"€{delta_3m:,.0f} vs target" if delta_3m != 0 else "On target"
+            
+            st.metric(
+                label="🎯 Target Goal",
+                value=f"€{group_target_amount:,.0f}",
+                # delta=delta_text_3m,
+                # delta_color=delta_color_3m
+            )
+        else:
+            st.metric(
+                label="🎯 Target Goal",
+                value="No target set"
+            )
+    
+    with col2:
+        if group_target_amount > 0:
+            # Calculate delta for 3-month average as percentage
+            delta_3m = avg_3_months - group_target_amount
+            delta_pct_3m = (delta_3m / group_target_amount) * 100 if group_target_amount > 0 else 0
+            delta_color_3m = "normal" if delta_pct_3m >= 0 else "inverse"
+            delta_text_3m = f"{delta_pct_3m:+.1f}%" if delta_3m != 0 else "On target"
+        else:
+            delta_text_3m = None
+            delta_color_3m = "normal"
+        
         st.metric(
-            label="🎯 Target Goal",
-            value=f"€{group_target_amount:,.0f}",
-            # delta=f"{len(categories_with_targets)} categories with targets"
+            label="📊 Last 3 Months Avg",
+            value=f"€{avg_3_months:,.0f}",
+            delta=delta_text_3m,
+            delta_color=delta_color_3m
         )
+    
     # Aggregate transactions by month
     group_transactions['date'] = pd.to_datetime(group_transactions['date'])
     group_transactions['month'] = group_transactions['date'].dt.to_period('M')
@@ -823,10 +886,11 @@ def main():
                 monthly_net_income = pd.Series(index=all_months, dtype=float)
                 
                 for month in all_months:
-                    income_amount = monthly_income.get(month, 0)
-                    expense_amount = monthly_expenses.get(month, 0)
+                    income_amount = monthly_income.get(month, 0) or 0
+                    expense_amount = monthly_expenses.get(month, 0) or 0
                     # Since expenses are already negative in YNAB, we add them to income
-                    monthly_net_income[month] = income_amount + expense_amount
+                    net_income = income_amount + expense_amount
+                    monthly_net_income[month] = net_income
                 
                 avg_monthly_net_income = monthly_net_income.mean()
                 st.metric("Avg Monthly Net Income", f"€{avg_monthly_net_income:,.2f}")
