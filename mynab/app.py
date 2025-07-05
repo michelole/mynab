@@ -357,7 +357,7 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
             categories_with_targets.append(cat)
     
     # Calculate average metrics
-    avg_3_months = calculate_category_group_averages(group_name, transactions_df, 3)
+    avg_12_months = calculate_category_group_averages(group_name, transactions_df, 12)
     
     # Calculate available budget for this category group
     available_budget = calculate_category_group_available_budget(group_name, budget_df)
@@ -367,16 +367,16 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
     
     with col1:
         if group_target_amount > 0:
-            # Calculate delta for 3-month average
-            delta_3m = avg_3_months - group_target_amount
-            delta_color_3m = "normal"
-            delta_text_3m = f"€{delta_3m:,.0f} vs target" if delta_3m != 0 else "On target"
+            # Calculate delta for 12-month average
+            delta_12m = avg_12_months - group_target_amount
+            delta_color_12m = "normal"
+            delta_text_12m = f"€{delta_12m:,.0f} vs target" if delta_12m != 0 else "On target"
             
             st.metric(
                 label="🎯 Target Budget",
                 value=f"€{group_target_amount:,.0f}",
-                # delta=delta_text_3m,
-                # delta_color=delta_color_3m
+                # delta=delta_text_12m,
+                # delta_color=delta_color_12m
             )
         else:
             st.metric(
@@ -395,25 +395,25 @@ def create_category_group_plot(group_name, transactions_df, budget_df, global_mo
     
     with col3:
         if group_target_amount > 0:
-            # Calculate delta for 3-month average as percentage
-            delta_3m = avg_3_months - group_target_amount
-            delta_pct_3m = (delta_3m / group_target_amount) * 100 if group_target_amount > 0 else 0
-            delta_color_3m = "inverse"
-            delta_text_3m = f"{delta_pct_3m:+.1f}%" if delta_3m != 0 else "On target"
+            # Calculate delta for 12-month average as percentage
+            delta_12m = avg_12_months - group_target_amount
+            delta_pct_12m = (delta_12m / group_target_amount) * 100 if group_target_amount > 0 else 0
+            delta_color_12m = "inverse"
+            delta_text_12m = f"{delta_pct_12m:+.1f}%" if delta_12m != 0 else "On target"
         else:
-            delta_text_3m = None
-            delta_color_3m = "normal"
+            delta_text_12m = None
+            delta_color_12m = "normal"
         
         st.metric(
-            label="📊 Last 3 Months Avg",
-            value=f"€{avg_3_months:,.0f}",
-            delta=delta_text_3m,
-            delta_color=delta_color_3m
+            label="📊 Last 12 Months Avg",
+            value=f"€{avg_12_months:,.0f}",
+            delta=delta_text_12m,
+            delta_color=delta_color_12m
         )
     
     with col4:
-        # Calculate suggested budget: -(available_budget - (avg_3_months*3))/3
-        suggested_budget = -(available_budget - (avg_3_months * 3)) / 3
+        # Calculate suggested budget: -(available_budget - (avg_12_months*12))/12
+        suggested_budget = -(available_budget - (avg_12_months * 12)) / 12
         
         # Calculate delta as difference ratio to target budget
         if group_target_amount > 0:
