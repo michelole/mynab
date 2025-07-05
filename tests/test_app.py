@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 def test_calculate_moving_average():
     """Test moving average calculation."""
-    from app import calculate_moving_average
+    from mynab.utils import calculate_moving_average
     
     # Test data
     data = pd.Series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
@@ -22,7 +22,7 @@ def test_calculate_moving_average():
 
 def test_calculate_forecast_trend():
     """Test forecast trend calculation."""
-    from app import calculate_forecast_trend
+    from mynab.utils import calculate_forecast_trend
     
     # Test data
     data = pd.Series([1, 2, 3, 4, 5])
@@ -42,7 +42,7 @@ def test_calculate_forecast_trend():
 
 def test_process_categories_data():
     """Test categories data processing."""
-    from app import process_categories_data
+    from mynab.utils import process_categories_data
     
     # Mock categories response
     class MockCategory:
@@ -86,16 +86,18 @@ def test_process_categories_data():
 
 def test_process_transactions_data():
     """Test transactions data processing."""
-    from app import process_transactions_data
+    from mynab.utils import process_transactions_data
     
     # Mock transaction
     class MockTransaction:
-        def __init__(self, date, amount, category_id=None, payee_name=None, memo=None):
+        def __init__(self, date, amount, category_id=None, category_name=None, payee_name=None, memo=None, id=None):
             self.date = date
             self.amount = amount
             self.category_id = category_id
+            self.category_name = category_name
             self.payee_name = payee_name
             self.memo = memo
+            self.id = id or "txn1"
     
     class MockTransactionsResponse:
         def __init__(self, transactions):
@@ -103,9 +105,9 @@ def test_process_transactions_data():
     
     # Create mock data
     transactions = [
-        MockTransaction("2024-01-01", -5000, "cat1", "Grocery Store", "Food shopping"),
-        MockTransaction("2024-01-02", 1000, "cat1", "Refund", "Return"),  # Income
-        MockTransaction("2024-01-03", -2000, "cat2", "Gas Station", "Fuel"),
+        MockTransaction("2024-01-01", -5000, "cat1", "Food", "Grocery Store", "Food shopping"),
+        MockTransaction("2024-01-02", 1000, "cat1", "Food", "Refund", "Return"),  # Income
+        MockTransaction("2024-01-03", -2000, "cat2", "Transport", "Gas Station", "Fuel"),
     ]
     
     response = MockTransactionsResponse(transactions)

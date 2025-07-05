@@ -1,10 +1,4 @@
 import streamlit as st
-from ynab.configuration import Configuration
-from ynab.api_client import ApiClient
-from ynab.api.budgets_api import BudgetsApi
-from ynab.api.categories_api import CategoriesApi
-from ynab.api.transactions_api import TransactionsApi
-from ynab.api.months_api import MonthsApi
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
@@ -12,10 +6,13 @@ from plotly.subplots import make_subplots
 import numpy as np
 from datetime import datetime, timedelta, date
 import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
+from mynab.utils import (
+    get_ynab_data, process_categories_data, process_transactions_data, process_months_data,
+    calculate_moving_average, calculate_forecast_trend, calculate_category_averages,
+    calculate_category_available_budget, filter_data_by_date_range, safe_strftime,
+    get_default_date_range, get_global_month_range, get_excluded_groups, get_default_categories,
+    get_default_category_groups
+)
 
 # Page configuration
 st.set_page_config(
@@ -50,294 +47,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
-def get_ynab_data(access_token):
-    """Fetch data from YNAB API"""
-    try:
-        configuration = Configuration(access_token=access_token)
-        with ApiClient(configuration) as api_client:
-            # Get budgets
-            budgets_api = BudgetsApi(api_client)
-            budgets_response = budgets_api.get_budgets()
-            
-            if not budgets_response.data.budgets:
-                st.error("No budgets found in your YNAB account.")
-                return None, None, None, None, None
-            
-            budget_id = budgets_response.data.budgets[0].id
-            budget_name = budgets_response.data.budgets[0].name
-            
-            # Get categories
-            categories_api = CategoriesApi(api_client)
-            categories_response = categories_api.get_categories(budget_id)
-            
-            # Get transactions for the last 24 months
-            transactions_api = TransactionsApi(api_client)
-            
-            # Calculate date range (last 24 months)
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=730)
-            
-            transactions_response = transactions_api.get_transactions(
-                budget_id,
-                since_date=start_date.date()
-            )
-            
-            # Get current month budget data for categories
-            months_api = MonthsApi(api_client)
-            current_month = datetime.now().replace(day=1).date()  # Use first day of current month
-            months_response = months_api.get_budget_month(budget_id, current_month)
-            
-            return budget_id, budget_name, categories_response, transactions_response, months_response
-            
-    except Exception as e:
-        st.error(f"Error connecting to YNAB API: {str(e)}")
-        return None, None, None, None, None
 
-def process_categories_data(categories_response):
-    """Process categories data into a structured format, excluding specified groups"""
-    categories_data = []
-    category_groups = {}
-    
-    # Categories to exclude
-    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments', 'Hidden Categories']
-    
-    for group in categories_response.data.category_groups:
-        group_name = group.name
-        
-        # Skip excluded category groups
-        if group_name in excluded_groups:
-            continue
-            
-        category_groups[group_name] = []
-        
-        for category in group.categories:
-            if not category.hidden and not category.deleted:
-                # Extract target/goal information
-                target_amount = None
-                target_type = None
-                target_date = None
-                
-                if hasattr(category, 'goal_target') and category.goal_target:
-                    target_amount = category.goal_target / 1000  # Convert from millidollars
-                
-                if hasattr(category, 'goal_type') and category.goal_type:
-                    target_type = category.goal_type
-                
-                if hasattr(category, 'goal_target_month') and category.goal_target_month:
-                    target_date = category.goal_target_month
-                
-                category_data = {
-                    'id': category.id,
-                    'name': category.name,
-                    'group': group_name,
-                    'category_group_id': group.id,
-                    'target_amount': target_amount,
-                    'target_type': target_type,
-                    'target_date': target_date
-                }
-                categories_data.append(category_data)
-                category_groups[group_name].append(category_data)
-    
-    return categories_data, category_groups
-
-def process_transactions_data(transactions_response, categories_data):
-    """Process transactions data into a structured format, handling split transactions"""
-    transactions = []
-    
-    for transaction in transactions_response.data.transactions:
-        # Skip zero amount transactions
-        if transaction.amount == 0:
-            continue
-            
-        # Get the date
-        transaction_date = None
-        if hasattr(transaction, 'var_date'):
-            transaction_date = transaction.var_date
-        elif hasattr(transaction, 'date'):
-            transaction_date = transaction.date
-        else:
-            # Skip transactions without a date
-            continue
-        
-        # Check if this transaction has subtransactions (split transaction)
-        has_subtransactions = hasattr(transaction, 'subtransactions') and transaction.subtransactions
-        
-        if has_subtransactions:
-            # Process each subtransaction
-            for subtransaction in transaction.subtransactions:
-                if subtransaction.amount == 0:
-                    continue
-                    
-                # Find category name and group for subtransaction
-                category_name = subtransaction.category_name or ""
-                category_group = ""
-                
-                if subtransaction.category_id:
-                    for cat in categories_data:
-                        if cat['id'] == subtransaction.category_id:
-                            category_group = cat['group']
-                            break
-                
-                # Determine if this is income or expense
-                is_income = subtransaction.amount > 0
-                
-                transactions.append({
-                    'date': transaction_date,
-                    'amount': subtransaction.amount / 1000,  # Convert from millidollars
-                    'category': category_name,
-                    'category_group': category_group,
-                    'payee_name': transaction.payee_name or "",
-                    'memo': subtransaction.memo or transaction.memo or "",
-                    'is_income': is_income,
-                    'transaction_id': transaction.id,
-                    'is_subtransaction': True
-                })
-        else:
-            # Process regular transaction (not split)
-            category_name = transaction.category_name or ""
-            category_group = ""
-            
-            # Find category group from categories_data
-            if transaction.category_id:
-                for cat in categories_data:
-                    if cat['id'] == transaction.category_id:
-                        category_group = cat['group']
-                        break
-            
-            # Determine if this is income or expense
-            is_income = transaction.amount > 0
-            
-            transactions.append({
-                'date': transaction_date,
-                'amount': transaction.amount / 1000,  # Convert from millidollars
-                'category': category_name,
-                'category_group': category_group,
-                'payee_name': transaction.payee_name or "",
-                'memo': transaction.memo or "",
-                'is_income': is_income,
-                'transaction_id': transaction.id,
-                'is_subtransaction': False
-            })
-    
-    df = pd.DataFrame(transactions)
-    
-    # Convert date column to datetime if it exists
-    if not df.empty and 'date' in df.columns:
-        df['date'] = pd.to_datetime(df['date'])
-    
-    return df
-
-def process_months_data(months_response, categories_data):
-    """Process months data for budget information"""
-    budget_data = []
-    
-    if months_response and months_response.data.month:
-        month_data = months_response.data.month
-        
-        # Extract category budgets from the current month
-        if hasattr(month_data, 'categories'):
-            for category in month_data.categories:
-                if category.budgeted != 0 or category.activity != 0:
-                    # Find category name and target information
-                    category_name = "Uncategorized"
-                    category_group = "Uncategorized"
-                    target_amount = None
-                    target_type = None
-                    target_date = None
-                    
-                    for cat in categories_data:
-                        if cat['id'] == category.id:
-                            category_name = cat['name']
-                            category_group = cat['group']
-                            target_amount = cat.get('target_amount')
-                            target_type = cat.get('target_type')
-                            target_date = cat.get('target_date')
-                            break
-                    
-                    budget_data.append({
-                        'category': category_name,
-                        'category_group': category_group,
-                        'budgeted': category.budgeted / 1000,  # Convert from millidollars
-                        'activity': category.activity / 1000,  # Convert from millidollars
-                        'available': category.balance / 1000,   # Convert from millidollars
-                        'target_amount': target_amount,
-                        'target_type': target_type,
-                        'target_date': target_date
-                    })
-    
-    df = pd.DataFrame(budget_data)
-    return df
-
-def calculate_moving_average(data, window=12):
-    """Calculate moving average for the given data"""
-    if len(data) < 2:
-        return data
-    
-    # If we have less than the window size, use all available data
-    actual_window = min(window, len(data))
-    return data.rolling(window=actual_window, min_periods=1).mean()
-
-def calculate_forecast_trend(data, periods=3):
-    """Calculate forecast trend using linear regression"""
-    if len(data) < 2:
-        return data
-    
-    x = np.arange(len(data))
-    y = data.values
-    
-    # Simple linear regression
-    coeffs = np.polyfit(x, y, 1)
-    trend_line = np.polyval(coeffs, x)
-    
-    # Extend trend line for forecast
-    future_x = np.arange(len(data), len(data) + periods)
-    forecast = np.polyval(coeffs, future_x)
-    
-    return pd.Series(trend_line, index=data.index), pd.Series(forecast, index=future_x)
-
-def calculate_category_averages(category_name, transactions_df, months=12):
-    """Calculate average spending for a category over the last N months"""
-    # Filter data for this category
-    cat_transactions = transactions_df[transactions_df['category'] == category_name].copy()
-    
-    if cat_transactions.empty:
-        return 0
-    
-    # Convert date and group by month
-    cat_transactions['date'] = pd.to_datetime(cat_transactions['date'])
-    cat_transactions['month'] = cat_transactions['date'].dt.to_period('M')
-    
-    # Get monthly totals
-    monthly_expenses = cat_transactions.groupby('month')['amount'].sum()
-    
-    if monthly_expenses.empty:
-        return 0
-    
-    # Sort by month and get the last N months
-    monthly_expenses = monthly_expenses.sort_index()
-    last_n_months = monthly_expenses.tail(months)
-    
-    # Calculate average (convert to positive for display)
-    avg_amount = abs(last_n_months.mean())
-    
-    return avg_amount
-
-def calculate_category_available_budget(category_name, budget_df):
-    """Calculate available budget for a category"""
-    if budget_df.empty:
-        return 0
-    
-    # Filter budget data for this category
-    cat_budget = budget_df[budget_df['category'] == category_name]
-    
-    if cat_budget.empty:
-        return 0
-    
-    # Get the available amount for this category
-    available = cat_budget['available'].iloc[0]
-    
-    return available
 
 def create_category_plot(category_name, transactions_df, budget_df, global_month_range, categories_data):
     """Create comprehensive plot for a single category with enhanced metrics"""
@@ -551,18 +261,7 @@ def create_category_plot(category_name, transactions_df, budget_df, global_month
     
     return fig
 
-def filter_data_by_date_range(transactions_df, start_date, end_date):
-    """Filter transactions dataframe by date range"""
-    if transactions_df.empty:
-        return transactions_df
-    
-    # Ensure date column is datetime
-    filtered_df = transactions_df.copy()
-    filtered_df['date'] = pd.to_datetime(filtered_df['date'])
-    
-    # Filter by date range
-    mask = (filtered_df['date'] >= pd.Timestamp(start_date)) & (filtered_df['date'] <= pd.Timestamp(end_date))
-    return filtered_df[mask]
+
 
 def main():
     st.markdown('<h1 class="main-header">📋 Individual Category Analysis</h1>', unsafe_allow_html=True)
@@ -595,21 +294,14 @@ def main():
     budget_df = process_months_data(months_response, categories_data)
     
     # Filter out transactions with excluded category groups
-    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments', 'Hidden Categories']
+    excluded_groups = get_excluded_groups()
     filtered_transactions_df = transactions_df[~transactions_df['category_group'].isin(excluded_groups)].copy()
     
     # Sidebar filters
     st.sidebar.header("📅 Date Range Filter")
     
-    # Calculate default date range (last day of prior month)
-    today = date.today()
-    
-    # Get the first day of current month, then subtract 1 day to get last day of prior month
-    first_day_current_month = date(today.year, today.month, 1)
-    last_day_prior_month = first_day_current_month - timedelta(days=1)
-    
-    default_end_date = last_day_prior_month
-    default_start_date = default_end_date - timedelta(days=365)  # 1 year before end date
+    # Get default date range
+    default_start_date, default_end_date = get_default_date_range()
     
     # Get the actual date range from the data
     if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
@@ -622,6 +314,7 @@ def main():
         default_end_date = min(data_end_date, default_end_date)
     
     # Date picker in sidebar
+    today = date.today()
     start_date = st.sidebar.date_input(
         "Start Date",
         value=default_start_date,
@@ -650,11 +343,11 @@ def main():
     st.sidebar.header("📊 Category Group Filter")
     
     # Get all category group names (excluding the specified groups)
-    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments', 'Hidden Categories']
+    excluded_groups = get_excluded_groups()
     category_group_names = sorted([group for group in category_groups.keys() if group not in excluded_groups])
     
     # Set default values for multiselect
-    default_groups = ["Lazer", "Necessidades"]
+    default_groups = get_default_category_groups()
     # Filter default groups to only include those that exist in the data
     available_defaults = [group for group in default_groups if group in category_group_names]
     
@@ -682,14 +375,6 @@ def main():
         budget_df = budget_df[budget_df['category_group'].isin(selected_category_groups)].copy()
     
     # Show date range info in sidebar
-    # Safely handle earliest_date/latest_date for info display
-    def safe_strftime(dt):
-        try:
-            if pd.isna(dt):
-                return "N/A"
-            return dt.strftime('%Y-%m') if hasattr(dt, 'strftime') else str(dt)
-        except Exception:
-            return str(dt)
     start_str = safe_strftime(start_date)
     end_str = safe_strftime(end_date)
     st.sidebar.info(f"Date range: {start_str} to {end_str}")
@@ -796,34 +481,9 @@ def main():
         )
     
     # Calculate global month range from filtered data
-    if isinstance(filtered_transactions_df, pd.DataFrame) and not filtered_transactions_df.empty:
-        all_transactions = filtered_transactions_df.copy()
-        all_transactions['date'] = pd.to_datetime(all_transactions['date'])
-        all_transactions = all_transactions.reset_index(drop=True)
-        all_transactions['month'] = all_transactions['date'].dt.to_period('M')
-        # Get the earliest and latest months from filtered data
-        earliest_month = all_transactions['month'].min()
-        latest_month = all_transactions['month'].max()
-        # Convert to datetime for date_range, handle NaTType
-        try:
-            if pd.isna(earliest_month) or pd.isna(latest_month):
-                global_month_range = pd.date_range(start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq='MS')
-                earliest_date = pd.Timestamp(start_date)
-                latest_date = pd.Timestamp(end_date)
-            else:
-                earliest_date = earliest_month.to_timestamp() if hasattr(earliest_month, 'to_timestamp') else pd.Timestamp(start_date)
-                latest_date = latest_month.to_timestamp() if hasattr(latest_month, 'to_timestamp') else pd.Timestamp(end_date)
-                global_month_range = pd.date_range(start=earliest_date, end=latest_date, freq='MS')
-        except Exception:
-            global_month_range = pd.date_range(start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq='MS')
-            earliest_date = pd.Timestamp(start_date)
-            latest_date = pd.Timestamp(end_date)
-    else:
-        global_month_range = pd.date_range(start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq='MS')
-        earliest_date = pd.Timestamp(start_date)
-        latest_date = pd.Timestamp(end_date)
+    global_month_range, earliest_date, latest_date = get_global_month_range(filtered_transactions_df, start_date, end_date)
     
-    # Safely handle earliest_date/latest_date for info display
+    # Display date range info
     start_str = safe_strftime(earliest_date)
     end_str = safe_strftime(latest_date)
     st.info(f"Date range: {start_str} to {end_str}")
@@ -832,7 +492,7 @@ def main():
     st.header("📊 Category Analysis")
     
     # Set default values for multiselect
-    default_categories = ["Groceries", "Dining Out", "Transportation"]
+    default_categories = get_default_categories()
     # Filter default categories to only include those that exist in the filtered data
     available_defaults = [cat for cat in default_categories if cat in filtered_category_names]
     
