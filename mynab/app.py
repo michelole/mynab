@@ -100,7 +100,7 @@ def process_categories_data(categories_response):
     category_groups = {}
     
     # Categories to exclude
-    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments']
+    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments', 'Hidden Categories']
     
     for group in categories_response.data.category_groups:
         group_name = group.name
@@ -650,7 +650,7 @@ def main():
     budget_df = process_months_data(months_response, categories_data)
     
     # Filter out transactions with excluded category groups
-    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments']
+    excluded_groups = ['Internal Master Category', 'Uncategorized', 'Credit Card Payments', 'Hidden Categories']
     filtered_transactions_df = transactions_df[~transactions_df['category_group'].isin(excluded_groups)].copy()
     
     # Sidebar date picker
@@ -875,22 +875,44 @@ def main():
     # Get all category group names (excluding the specified groups)
     category_group_names = sorted([group for group in category_groups.keys() if group not in excluded_groups])
     
-    st.info(f"Displaying analysis for {len(category_group_names)} category groups (excluding Internal Master Category, Uncategorized, and Credit Card Payments)")
+    st.info(f"Displaying analysis for {len(category_group_names)} category groups (excluding Internal Master Category, Uncategorized, Credit Card Payments, and Hidden Categories)")
     try:
         st.info(f"Date range: {earliest_date.strftime('%Y-%m')} to {latest_date.strftime('%Y-%m')}")
     except (AttributeError, ValueError):
         st.info("Date range: Unable to determine")
+    
+    # Category group filter
+    st.subheader("🔍 Category Group Filter")
+    
+    # Set default values for multiselect
+    default_groups = ["Lazer", "Necessidades"]
+    # Filter default groups to only include those that exist in the data
+    available_defaults = [group for group in default_groups if group in category_group_names]
+    
+    selected_category_groups = st.multiselect(
+        "Select category groups to display:",
+        options=category_group_names,
+        default=available_defaults,
+        help="Choose which category groups to include in the analysis. Leave empty to show all groups."
+    )
+    
+    # If no groups are selected, show all groups
+    if not selected_category_groups:
+        selected_category_groups = category_group_names
+        st.info("Showing all category groups (no filter applied)")
+    else:
+        st.success(f"Showing {len(selected_category_groups)} selected category groups")
     
     # Display all category group plots in a grid
     st.subheader("📈 All Category Group Plots")
     
     # Create a grid layout for the plots
     cols_per_row = 2
-    for i in range(0, len(category_group_names), cols_per_row):
+    for i in range(0, len(selected_category_groups), cols_per_row):
         cols = st.columns(cols_per_row)
         for j, col in enumerate(cols):
-            if i + j < len(category_group_names):
-                group_name = category_group_names[i + j]
+            if i + j < len(selected_category_groups):
+                group_name = selected_category_groups[i + j]
                 with col:
                     st.subheader(group_name)
                     group_fig = create_category_group_plot(group_name, filtered_transactions_df, budget_df, global_month_range, categories_data)
