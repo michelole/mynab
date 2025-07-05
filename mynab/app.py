@@ -123,9 +123,9 @@ def load_data():
 def setup_sidebar():
     """Setup sidebar with filters"""
     with st.sidebar:
-        st.header("📅 Date Range Filter")
+        st.header("📅 Date Range")
 
-        st.info(f"**{st.session_state.budget_name}**")
+        # st.info(f"**{st.session_state.budget_name}**")
 
         # Get default date range
         default_start_date, default_end_date = get_default_date_range()
@@ -174,7 +174,7 @@ def setup_sidebar():
         st.session_state.end_date = end_date
 
         # Category Group Filter in sidebar
-        st.header("📊 Category Group Filter")
+        st.header("📊 Category Groups")
 
         if st.session_state.category_groups is not None:
             # Get all category group names (excluding the specified groups)
@@ -209,7 +209,7 @@ def setup_sidebar():
             st.session_state.selected_category_groups = selected_category_groups
 
             # Category Filter in sidebar
-            st.header("📋 Category Filter")
+            st.header("📋 Categories")
 
             # Get categories from selected category groups
             available_categories = []
