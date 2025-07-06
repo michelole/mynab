@@ -788,50 +788,54 @@ def create_unified_plot(
 
         # Moving average line (if we have enough data) - flipped to positive side
         if len(complete_monthly_data) >= 3:
-            moving_avg = calculate_moving_average(abs(complete_monthly_data["amount"]))
+            # Use only the actual data (non-zero values) for calculations
+            actual_data_mask = complete_monthly_data["amount"] != 0
+            actual_data = complete_monthly_data[actual_data_mask].copy()
 
-            fig.add_trace(
-                go.Scatter(
-                    x=complete_monthly_data["month"],
-                    y=moving_avg,
-                    name="12-Month Moving Average",
-                    line=dict(color="#1f77b4", width=2, dash="dash"),
-                    mode="lines",
+            if len(actual_data) >= 3:
+                moving_avg = calculate_moving_average(abs(actual_data["amount"]))
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=actual_data["month"],
+                        y=moving_avg,
+                        name="12-Month Moving Average",
+                        line=dict(color="#1f77b4", width=2, dash="dash"),
+                        mode="lines",
+                    )
                 )
-            )
 
-            # Forecast trend line - flipped to positive side
-            trend_line, forecast = calculate_forecast_trend(
-                abs(complete_monthly_data["amount"])
-            )
-
-            fig.add_trace(
-                go.Scatter(
-                    x=complete_monthly_data["month"],
-                    y=trend_line,
-                    name="12-Month Forecast Trend",
-                    line=dict(color="#d62728", width=2),
-                    mode="lines",
+                # Forecast trend line - flipped to positive side
+                trend_line, forecast = calculate_forecast_trend(
+                    abs(actual_data["amount"])
                 )
-            )
 
-            # Add forecast extension - flipped to positive side
-            future_months = pd.date_range(
-                start=complete_monthly_data["month_date"].iloc[-1]
-                + pd.DateOffset(months=1),
-                periods=3,
-                freq="MS",
-            )
-
-            fig.add_trace(
-                go.Scatter(
-                    x=future_months.strftime("%Y-%m"),
-                    y=abs(forecast),
-                    name="Forecast (Next 3 Months)",
-                    line=dict(color="#d62728", width=2, dash="dot"),
-                    mode="lines",
+                fig.add_trace(
+                    go.Scatter(
+                        x=actual_data["month"],
+                        y=trend_line,
+                        name="12-Month Forecast Trend",
+                        line=dict(color="#d62728", width=2),
+                        mode="lines",
+                    )
                 )
-            )
+
+                # Add forecast extension - flipped to positive side
+                future_months = pd.date_range(
+                    start=actual_data["month_date"].iloc[-1] + pd.DateOffset(months=1),
+                    periods=3,
+                    freq="MS",
+                )
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=future_months.strftime("%Y-%m"),
+                        y=abs(forecast),
+                        name="Forecast (Next 3 Months)",
+                        line=dict(color="#d62728", width=2, dash="dot"),
+                        mode="lines",
+                    )
+                )
 
         # Add target goal line if available
         if target_amount is not None and target_amount > 0:

@@ -143,56 +143,66 @@ def create_comprehensive_plot(
 
     # Moving average line (if we have enough data) - flip expenses to positive side
     if len(complete_monthly_data) >= 3:
-        data_for_calculation = complete_monthly_data["amount"]
-        if data_type == "total_expense":
-            data_for_calculation = abs(complete_monthly_data["amount"])
+        # Use only the actual data (non-zero values) for calculations
+        actual_data_mask = complete_monthly_data["amount"] != 0
+        actual_data = complete_monthly_data[actual_data_mask].copy()
 
-        moving_avg = calculate_moving_average(data_for_calculation)
+        if len(actual_data) >= 3:
+            data_for_calculation = actual_data["amount"]
+            if data_type == "total_expense":
+                data_for_calculation = abs(actual_data["amount"])
 
-        fig.add_trace(
-            go.Scatter(
-                x=complete_monthly_data["month"],
-                y=moving_avg,
-                name="12-Month Moving Average",
-                line=dict(color="#1f77b4", width=2, dash="dash"),
-                mode="lines",
+            moving_avg = calculate_moving_average(data_for_calculation)
+
+            fig.add_trace(
+                go.Scatter(
+                    x=actual_data["month"],
+                    y=moving_avg,
+                    name="12-Month Moving Average",
+                    line=dict(color="#1f77b4", width=2, dash="dash"),
+                    mode="lines",
+                )
             )
-        )
 
-        # Forecast trend line - flip expenses to positive side
-        trend_line, forecast = calculate_forecast_trend(data_for_calculation)
+            # Forecast trend line - flip expenses to positive side
+            trend_line, forecast = calculate_forecast_trend(data_for_calculation)
 
-        fig.add_trace(
-            go.Scatter(
-                x=complete_monthly_data["month"],
-                y=trend_line,
-                name="12-Month Forecast Trend",
-                line=dict(color="#d62728", width=2),
-                mode="lines",
+            fig.add_trace(
+                go.Scatter(
+                    x=actual_data["month"],
+                    y=trend_line,
+                    name="12-Month Forecast Trend",
+                    line=dict(color="#d62728", width=2),
+                    mode="lines",
+                )
             )
-        )
 
-        # Add forecast extension - flip expenses to positive side
-        future_months = pd.date_range(
-            start=complete_monthly_data["month_date"].iloc[-1]
-            + pd.DateOffset(months=1),
-            periods=3,
-            freq="MS",
-        )
+            # Add forecast extension - flip expenses to positive side
+            # Get the last month date from the actual data
+            if len(actual_data) > 0:
+                last_month_date = actual_data["month_date"].values[-1]
+            else:
+                last_month_date = complete_monthly_data["month_date"].iloc[-1]
 
-        forecast_values = forecast
-        if data_type == "total_expense":
-            forecast_values = abs(forecast)
-
-        fig.add_trace(
-            go.Scatter(
-                x=future_months.strftime("%Y-%m"),
-                y=forecast_values,
-                name="Forecast (Next 3 Months)",
-                line=dict(color="#d62728", width=2, dash="dot"),
-                mode="lines",
+            future_months = pd.date_range(
+                start=last_month_date + pd.DateOffset(months=1),
+                periods=3,
+                freq="MS",
             )
-        )
+
+            forecast_values = forecast
+            if data_type == "total_expense":
+                forecast_values = abs(forecast)
+
+            fig.add_trace(
+                go.Scatter(
+                    x=future_months.strftime("%Y-%m"),
+                    y=forecast_values,
+                    name="Forecast (Next 3 Months)",
+                    line=dict(color="#d62728", width=2, dash="dot"),
+                    mode="lines",
+                )
+            )
 
     # Update layout
     layout_update = {
