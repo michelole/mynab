@@ -68,7 +68,7 @@ def initialize_session_state():
     if "category_groups" not in st.session_state:
         st.session_state.category_groups = None
     if "global_scale_enabled" not in st.session_state:
-        st.session_state.global_scale_enabled = False
+        st.session_state.global_scale_enabled = True
 
 
 def load_data():
