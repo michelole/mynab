@@ -266,30 +266,41 @@ def main():
             filtered_category_names,
         )
 
-    # Category Analysis
-    st.header("📊 Category Analysis")
+    # Group categories by category group
+    categories_by_group = {}
+    for cat in filtered_categories_data:
+        group_name = cat["group"]
+        if group_name not in categories_by_group:
+            categories_by_group[group_name] = []
+        categories_by_group[group_name].append(cat["name"])
 
-    # Create a grid layout for the plots
+    # Display categories grouped by category group
     cols_per_row = 2
-    for i in range(0, len(filtered_category_names), cols_per_row):
-        cols = st.columns(cols_per_row)
-        for j, col in enumerate(cols):
-            if i + j < len(filtered_category_names):
-                category_name = filtered_category_names[i + j]
-                with col:
-                    st.subheader(category_name)
-                    category_fig = create_category_plot(
-                        category_name,
-                        filtered_transactions_df,
-                        budget_df,
-                        global_month_range,
-                        categories_data,
-                        category_y_range,
-                    )
-                    if category_fig:
-                        st.plotly_chart(category_fig, use_container_width=True)
-                    else:
-                        st.info(f"No data available for {category_name}")
+    for group_name, category_names in categories_by_group.items():
+        # Add divider and header for each category group
+        st.markdown("---")
+        st.header(f"📂 {group_name}")
+
+        # Create a grid layout for the plots in this group
+        for i in range(0, len(category_names), cols_per_row):
+            cols = st.columns(cols_per_row)
+            for j, col in enumerate(cols):
+                if i + j < len(category_names):
+                    category_name = category_names[i + j]
+                    with col:
+                        st.subheader(category_name)
+                        category_fig = create_category_plot(
+                            category_name,
+                            filtered_transactions_df,
+                            budget_df,
+                            global_month_range,
+                            categories_data,
+                            category_y_range,
+                        )
+                        if category_fig:
+                            st.plotly_chart(category_fig, use_container_width=True)
+                        else:
+                            st.info(f"No data available for {category_name}")
 
 
 if __name__ == "__main__":
