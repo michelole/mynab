@@ -9,6 +9,7 @@ from mynab.utils import (
     get_excluded_groups,
     create_unified_plot,
     calculate_global_y_range,
+    format_currency,
 )
 
 # Page configuration
@@ -131,6 +132,9 @@ def create_comprehensive_plot(
     if data_type == "total_expense":
         y_values = abs(complete_monthly_data["amount"])
 
+    # Pre-format hover text with currency formatting
+    hover_text = [format_currency(val) for val in y_values]
+
     fig.add_trace(
         go.Bar(
             x=complete_monthly_data["month"],
@@ -138,6 +142,10 @@ def create_comprehensive_plot(
             name=f"Actual {data_type.replace('_', ' ').title()}",
             marker_color=color,
             opacity=0.8,
+            hovertemplate="<b>%{x}</b><br>"
+            + f"{data_type.replace('_', ' ').title()}: %{{customdata}}<br>"
+            + "<extra></extra>",
+            customdata=hover_text,
         )
     )
 
@@ -154,6 +162,9 @@ def create_comprehensive_plot(
 
             moving_avg = calculate_moving_average(data_for_calculation)
 
+            # Pre-format hover text for moving average
+            moving_avg_hover = [format_currency(val) for val in moving_avg]
+
             fig.add_trace(
                 go.Scatter(
                     x=actual_data["month"],
@@ -161,11 +172,18 @@ def create_comprehensive_plot(
                     name="12-Month Moving Average",
                     line=dict(color="#1f77b4", width=2, dash="dash"),
                     mode="lines",
+                    hovertemplate="<b>%{x}</b><br>"
+                    + "12-Month Moving Average: %{customdata}<br>"
+                    + "<extra></extra>",
+                    customdata=moving_avg_hover,
                 )
             )
 
             # Forecast trend line - flip expenses to positive side
             trend_line, forecast = calculate_forecast_trend(data_for_calculation)
+
+            # Pre-format hover text for trend line
+            trend_line_hover = [format_currency(val) for val in trend_line]
 
             fig.add_trace(
                 go.Scatter(
@@ -174,13 +192,17 @@ def create_comprehensive_plot(
                     name="12-Month Forecast Trend",
                     line=dict(color="#d62728", width=2),
                     mode="lines",
+                    hovertemplate="<b>%{x}</b><br>"
+                    + "12-Month Forecast Trend: %{customdata}<br>"
+                    + "<extra></extra>",
+                    customdata=trend_line_hover,
                 )
             )
 
             # Add forecast extension - flip expenses to positive side
             # Get the last month date from the actual data
             if len(actual_data) > 0:
-                last_month_date = actual_data["month_date"].values[-1]
+                last_month_date = actual_data["month_date"].iloc[-1]
             else:
                 last_month_date = complete_monthly_data["month_date"].iloc[-1]
 
@@ -194,6 +216,9 @@ def create_comprehensive_plot(
             if data_type == "total_expense":
                 forecast_values = abs(forecast)
 
+            # Pre-format hover text for forecast
+            forecast_hover = [format_currency(val) for val in forecast_values]
+
             fig.add_trace(
                 go.Scatter(
                     x=future_months.strftime("%Y-%m"),
@@ -201,6 +226,10 @@ def create_comprehensive_plot(
                     name="Forecast (Next 3 Months)",
                     line=dict(color="#d62728", width=2, dash="dot"),
                     mode="lines",
+                    hovertemplate="<b>%{x}</b><br>"
+                    + "Forecast: %{customdata}<br>"
+                    + "<extra></extra>",
+                    customdata=forecast_hover,
                 )
             )
 
@@ -347,7 +376,7 @@ with col1:
         (filtered_transactions_df["category"] == "Inflow: Ready to Assign")
         & (filtered_transactions_df["payee_name"] != "Starting Balance")
     ]["amount"].sum()
-    st.metric("Total Income", f"€{total_income:,.2f}")
+    st.metric("Total Income", format_currency(total_income))
 
 with col2:
     # Include only transactions with a category group
@@ -356,13 +385,13 @@ with col2:
         & (filtered_transactions_df["category_group"].astype(str) != "")
     ]
     total_expenses = transactions_with_category["amount"].sum()
-    st.metric("Total Expenses", f"€{total_expenses:,.2f}")
+    st.metric("Total Expenses", format_currency(total_expenses))
 
 with col3:
     # Calculate total net income (income - expenses)
     # Since expenses are already negative in YNAB, we add them to income
     total_net_income = total_income + total_expenses
-    st.metric("Total Net Income", f"€{total_net_income:,.2f}")
+    st.metric("Total Net Income", format_currency(total_net_income))
 
 # Display summary metrics - Row 2 (Averages)
 col4, col5, col6 = st.columns(3)
@@ -388,11 +417,11 @@ with col4:
                 income_transactions["date"].dt.to_period("M")
             )["amount"].sum()
             avg_monthly_income = monthly_income.mean()
-            st.metric("Avg Monthly Income", f"€{avg_monthly_income:,.2f}")
+            st.metric("Avg Monthly Income", format_currency(avg_monthly_income))
         else:
-            st.metric("Avg Monthly Income", "€0.00")
+            st.metric("Avg Monthly Income", format_currency(0))
     else:
-        st.metric("Avg Monthly Income", "€0.00")
+        st.metric("Avg Monthly Income", format_currency(0))
 
 with col5:
     # Create a copy for calculations to avoid modifying the original
@@ -418,11 +447,11 @@ with col5:
                 transactions_with_category["date"].dt.to_period("M")
             )["amount"].sum()
             avg_monthly_expenses = monthly_expenses.mean()
-            st.metric("Avg Monthly Expenses", f"€{avg_monthly_expenses:,.2f}")
+            st.metric("Avg Monthly Expenses", format_currency(avg_monthly_expenses))
         else:
-            st.metric("Avg Monthly Expenses", "€0.00")
+            st.metric("Avg Monthly Expenses", format_currency(0))
     else:
-        st.metric("Avg Monthly Expenses", "€0.00")
+        st.metric("Avg Monthly Expenses", format_currency(0))
 
 with col6:
     # Calculate average monthly net income
@@ -469,11 +498,11 @@ with col6:
                 monthly_net_income[month] = net_income
 
             avg_monthly_net_income = monthly_net_income.mean()
-            st.metric("Avg Monthly Net Income", f"€{avg_monthly_net_income:,.2f}")
+            st.metric("Avg Monthly Net Income", format_currency(avg_monthly_net_income))
         else:
-            st.metric("Avg Monthly Net Income", "€0.00")
+            st.metric("Avg Monthly Net Income", format_currency(0))
     else:
-        st.metric("Avg Monthly Net Income", "€0.00")
+        st.metric("Avg Monthly Net Income", format_currency(0))
 
 st.markdown("---")
 

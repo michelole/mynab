@@ -10,9 +10,26 @@ from ynab.api.categories_api import CategoriesApi
 from ynab.api.transactions_api import TransactionsApi
 from ynab.api.months_api import MonthsApi
 from dotenv import load_dotenv
+import requests
+import json
 
 # Load environment variables
 load_dotenv()
+
+
+def format_currency(amount):
+    """Format currency amount with no cents and period as thousand separator"""
+    if pd.isna(amount) or amount is None:
+        return "€0"
+
+    # Round to nearest integer (no cents)
+    rounded_amount = round(amount)
+
+    # Format with period as thousand separator
+    if rounded_amount >= 0:
+        return f"€{rounded_amount:,}".replace(",", ".")
+    else:
+        return f"-€{abs(rounded_amount):,}".replace(",", ".")
 
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -688,7 +705,7 @@ def create_unified_plot(
         if target_amount is not None and target_amount > 0:
             st.metric(
                 label="🎯 Target Budget",
-                value=f"€{target_amount:,.0f}",
+                value=format_currency(target_amount),
             )
         else:
             st.metric(label="🎯 Target Budget", value="No target set")
@@ -696,7 +713,7 @@ def create_unified_plot(
     with col2:
         st.metric(
             label="💰 Available Budget",
-            value=f"€{available_budget:,.0f}",
+            value=format_currency(available_budget),
         )
 
     # Create metrics row - Second row
@@ -717,7 +734,7 @@ def create_unified_plot(
 
         st.metric(
             label="📊 Last 12 Months Avg",
-            value=f"€{avg_12_months:,.0f}",
+            value=format_currency(avg_12_months),
             delta=delta_text_12m,
             delta_color=delta_color_12m,
         )
@@ -737,7 +754,7 @@ def create_unified_plot(
 
         st.metric(
             label="💡 Suggested Budget",
-            value=f"€{suggested_budget:,.0f}",
+            value=format_currency(suggested_budget),
             delta=delta_text,
             delta_color=delta_color,
         )
@@ -776,6 +793,11 @@ def create_unified_plot(
         complete_monthly_data = complete_monthly_data.sort_values("month_date")
 
         # Bar chart for actual expenses (including 0 values) - flipped to positive side
+        # Pre-format hover text with currency formatting
+        expense_hover = [
+            format_currency(abs(val)) for val in complete_monthly_data["amount"]
+        ]
+
         fig.add_trace(
             go.Bar(
                 x=complete_monthly_data["month"],
@@ -783,6 +805,10 @@ def create_unified_plot(
                 name="Actual Expenses",
                 marker_color="#ff7f0e",
                 opacity=0.8,
+                hovertemplate="<b>%{x}</b><br>"
+                + "Actual Expenses: %{customdata}<br>"
+                + "<extra></extra>",
+                customdata=expense_hover,
             )
         )
 
@@ -795,6 +821,9 @@ def create_unified_plot(
             if len(actual_data) >= 3:
                 moving_avg = calculate_moving_average(abs(actual_data["amount"]))
 
+                # Pre-format hover text for moving average
+                moving_avg_hover = [format_currency(val) for val in moving_avg]
+
                 fig.add_trace(
                     go.Scatter(
                         x=actual_data["month"],
@@ -802,6 +831,10 @@ def create_unified_plot(
                         name="12-Month Moving Average",
                         line=dict(color="#1f77b4", width=2, dash="dash"),
                         mode="lines",
+                        hovertemplate="<b>%{x}</b><br>"
+                        + "12-Month Moving Average: %{customdata}<br>"
+                        + "<extra></extra>",
+                        customdata=moving_avg_hover,
                     )
                 )
 
@@ -810,6 +843,9 @@ def create_unified_plot(
                     abs(actual_data["amount"])
                 )
 
+                # Pre-format hover text for trend line
+                trend_line_hover = [format_currency(val) for val in trend_line]
+
                 fig.add_trace(
                     go.Scatter(
                         x=actual_data["month"],
@@ -817,6 +853,10 @@ def create_unified_plot(
                         name="12-Month Forecast Trend",
                         line=dict(color="#d62728", width=2),
                         mode="lines",
+                        hovertemplate="<b>%{x}</b><br>"
+                        + "12-Month Forecast Trend: %{customdata}<br>"
+                        + "<extra></extra>",
+                        customdata=trend_line_hover,
                     )
                 )
 
@@ -827,6 +867,9 @@ def create_unified_plot(
                     freq="MS",
                 )
 
+                # Pre-format hover text for forecast
+                forecast_hover = [format_currency(val) for val in abs(forecast)]
+
                 fig.add_trace(
                     go.Scatter(
                         x=future_months.strftime("%Y-%m"),
@@ -834,6 +877,10 @@ def create_unified_plot(
                         name="Forecast (Next 3 Months)",
                         line=dict(color="#d62728", width=2, dash="dot"),
                         mode="lines",
+                        hovertemplate="<b>%{x}</b><br>"
+                        + "Forecast: %{customdata}<br>"
+                        + "<extra></extra>",
+                        customdata=forecast_hover,
                     )
                 )
 
@@ -846,13 +893,20 @@ def create_unified_plot(
                 future_month_strs = future_months.strftime("%Y-%m").tolist()
                 all_months.extend(future_month_strs)
 
+            # Pre-format hover text for target goal
+            target_hover = [format_currency(target_amount)] * len(all_months)
+
             fig.add_trace(
                 go.Scatter(
                     x=all_months,
                     y=[target_amount] * len(all_months),
-                    name=f"Target Goal (€{target_amount:,.0f})",
+                    name=f"Target Goal ({format_currency(target_amount)})",
                     line=dict(color="#2ca02c", width=3, dash="solid"),
                     mode="lines",
+                    hovertemplate="<b>%{x}</b><br>"
+                    + "Target Goal: %{customdata}<br>"
+                    + "<extra></extra>",
+                    customdata=target_hover,
                 )
             )
 

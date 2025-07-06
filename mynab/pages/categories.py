@@ -8,6 +8,7 @@ from mynab.utils import (
     get_excluded_groups,
     create_unified_plot,
     calculate_global_y_range,
+    format_currency,
 )
 
 # Page configuration
@@ -202,7 +203,7 @@ def main():
         # Target Budget - no delta for total target
         st.metric(
             label="🎯 Total Target Budget",
-            value=f"€{total_target:,.0f}",
+            value=format_currency(total_target),
             help="Sum of all category target budgets",
         )
 
@@ -218,7 +219,7 @@ def main():
 
         st.metric(
             label="📊 Last 12 Months Average",
-            value=f"€{last_12m_avg:,.0f}",
+            value=format_currency(last_12m_avg),
             delta=delta_text_12m,
             delta_color=delta_color_12m,
             help="Average monthly expenses over the last 12 months",
@@ -228,7 +229,7 @@ def main():
         # Available Budget - no delta
         st.metric(
             label="💰 Total Available Budget",
-            value=f"€{total_available:,.0f}",
+            value=format_currency(total_available),
             help="Sum of all category available budgets",
         )
 
@@ -243,7 +244,7 @@ def main():
 
         st.metric(
             label="💡 Total Suggested Budget",
-            value=f"€{total_suggested:,.0f}",
+            value=format_currency(total_suggested),
             delta=delta_text,
             delta_color=delta_color,
             help="Sum of all category suggested budgets",
