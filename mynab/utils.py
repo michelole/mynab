@@ -44,7 +44,7 @@ def get_ynab_data(access_token):
 
             if not budgets_response.data.budgets:
                 st.error("No budgets found in your YNAB account.")
-                return None, None, None, None, None
+                return None, None, None, None, None, None
 
             budget_id = budgets_response.data.budgets[0].id
             budget_name = budgets_response.data.budgets[0].name
@@ -71,17 +71,33 @@ def get_ynab_data(access_token):
             )  # Use first day of current month
             months_response = months_api.get_budget_month(budget_id, current_month)
 
+            # Get accounts
+            accounts_response = budgets_api.get_budget_by_id(budget_id)
+            accounts_list = []
+            if hasattr(accounts_response.data.budget, "accounts"):
+                for acc in accounts_response.data.budget.accounts:
+                    accounts_list.append(
+                        {
+                            "id": acc.id,
+                            "name": acc.name,
+                            "type": getattr(acc, "type", None),
+                            "on_budget": getattr(acc, "on_budget", None),
+                            "closed": getattr(acc, "closed", None),
+                        }
+                    )
+
             return (
                 budget_id,
                 budget_name,
                 categories_response,
                 transactions_response,
                 months_response,
+                accounts_list,
             )
 
     except Exception as e:
         st.error(f"Error connecting to YNAB API: {str(e)}")
-        return None, None, None, None, None
+        return None, None, None, None, None, None
 
 
 def process_categories_data(categories_response):
@@ -161,6 +177,10 @@ def process_transactions_data(transactions_response, categories_data):
             # Skip transactions without a date
             continue
 
+        # Get account info
+        account_id = getattr(transaction, "account_id", None)
+        account_name = getattr(transaction, "account_name", None)
+
         # Check if this transaction has subtransactions (split transaction)
         has_subtransactions = (
             hasattr(transaction, "subtransactions") and transaction.subtransactions
@@ -192,6 +212,8 @@ def process_transactions_data(transactions_response, categories_data):
                         "payee_name": transaction.payee_name or "",
                         "memo": subtransaction.memo or transaction.memo or "",
                         "transaction_id": transaction.id,
+                        "account_id": account_id,
+                        "account_name": account_name,
                     }
                 )
         else:
@@ -215,6 +237,8 @@ def process_transactions_data(transactions_response, categories_data):
                     "payee_name": transaction.payee_name or "",
                     "memo": transaction.memo or "",
                     "transaction_id": transaction.id,
+                    "account_id": account_id,
+                    "account_name": account_name,
                 }
             )
 

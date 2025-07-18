@@ -95,6 +95,7 @@ def load_data():
                 categories_response,
                 transactions_response,
                 months_response,
+                accounts_list,
             ) = get_ynab_data(api_token)
 
         if not budget_id:
@@ -113,6 +114,7 @@ def load_data():
         st.session_state.budget_df = budget_df
         st.session_state.categories_data = categories_data
         st.session_state.category_groups = category_groups
+        st.session_state.accounts_list = accounts_list
         st.session_state.data_loaded = True
 
         return True
@@ -284,6 +286,7 @@ def main():
             st.Page("pages/categories.py", title="Categories", icon="📋"),
             st.Page("pages/transactions.py", title="Transactions", icon="📄"),
             st.Page("pages/budget_data.py", title="Budget Data", icon="💰"),
+            st.Page("pages/accounts.py", title="Accounts", icon="🏦"),
         ]
     )
     pg.run()
