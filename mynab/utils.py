@@ -303,15 +303,21 @@ def calculate_forecast_trend(data, periods=3):
     return pd.Series(trend_line, index=data.index), pd.Series(forecast, index=future_x)
 
 
-def calculate_category_averages(category_name, transactions_df, months=12):
-    """Calculate average spending for a category over the last N months"""
+def calculate_category_averages(
+    category_name, transactions_df, months=12, global_month_range=None
+):
+    """Calculate average spending for a category over the last N months, including months with zero expenses"""
     # Filter data for this category
     cat_transactions = transactions_df[
         transactions_df["category"] == category_name
     ].copy()
 
     if cat_transactions.empty:
-        return 0
+        # If no transactions, but global_month_range is provided, return 0
+        if global_month_range is not None and len(global_month_range) > 0:
+            return 0
+        else:
+            return 0
 
     # Convert date and group by month
     cat_transactions["date"] = pd.to_datetime(cat_transactions["date"])
@@ -319,13 +325,18 @@ def calculate_category_averages(category_name, transactions_df, months=12):
 
     # Get monthly totals
     monthly_expenses = cat_transactions.groupby("month")["amount"].sum()
-
-    if monthly_expenses.empty:
-        return 0
-
-    # Sort by month and get the last N months
     monthly_expenses = monthly_expenses.sort_index()
-    last_n_months = monthly_expenses.tail(months)
+
+    # If global_month_range is provided, reindex to include all months
+    if global_month_range is not None and len(global_month_range) > 0:
+        # Convert global_month_range to PeriodIndex
+        global_months = pd.PeriodIndex(global_month_range.strftime("%Y-%m"), freq="M")
+        monthly_expenses = monthly_expenses.reindex(global_months, fill_value=0)
+        # Use the last N months from the global range
+        last_n_months = monthly_expenses[-months:]
+    else:
+        # Use the last N months from available data
+        last_n_months = monthly_expenses.tail(months)
 
     # Calculate average (convert to positive for display)
     avg_amount = abs(last_n_months.mean())
@@ -690,7 +701,9 @@ def create_unified_plot(
                 break
 
         # Calculate average metrics
-        avg_12_months = calculate_category_averages(name, transactions_df, 12)
+        avg_12_months = calculate_category_averages(
+            name, transactions_df, 12, global_month_range
+        )
 
         # Calculate available budget for this category
         available_budget = calculate_category_available_budget(name, budget_df)

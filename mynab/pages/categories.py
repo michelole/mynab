@@ -135,8 +135,15 @@ def main():
             & (budget_df["category"].isin(selected_categories))
         ].copy()
 
+    # Calculate global month range from filtered data
+    global_month_range, earliest_date, latest_date = get_global_month_range(
+        filtered_transactions_df, start_date, end_date
+    )
+
     # Calculate summary metrics
-    def calculate_summary_metrics(categories_data, budget_df, filtered_transactions_df):
+    def calculate_summary_metrics(
+        categories_data, budget_df, filtered_transactions_df, global_month_range
+    ):
         """Calculate summary metrics for all categories"""
         # Total target budget
         total_target_budget = sum(
@@ -171,7 +178,7 @@ def main():
         for cat in categories_data:
             category_name = cat["name"]
             avg_12_months = calculate_category_averages(
-                category_name, filtered_transactions_df, 12
+                category_name, filtered_transactions_df, 12, global_month_range
             )
             available_budget = calculate_category_available_budget(
                 category_name, budget_df
@@ -189,7 +196,10 @@ def main():
     # Calculate summary metrics
     total_target, total_available, last_12m_avg, total_suggested = (
         calculate_summary_metrics(
-            filtered_categories_data, budget_df, filtered_transactions_df
+            filtered_categories_data,
+            budget_df,
+            filtered_transactions_df,
+            global_month_range,
         )
     )
 
@@ -249,11 +259,6 @@ def main():
             delta_color=delta_color,
             help="Sum of all category suggested budgets",
         )
-
-    # Calculate global month range from filtered data
-    global_month_range, earliest_date, latest_date = get_global_month_range(
-        filtered_transactions_df, start_date, end_date
-    )
 
     # Calculate global y-axis range for categories if enabled
     global_scale_enabled = st.session_state.get("global_scale_enabled", False)
