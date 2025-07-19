@@ -865,75 +865,72 @@ def create_unified_plot(
 
         # Moving average line (if we have enough data) - flipped to positive side
         if len(complete_monthly_data) >= 3:
-            # Use only the actual data (non-zero values) for calculations
-            actual_data_mask = complete_monthly_data["amount"] != 0
-            actual_data = complete_monthly_data[actual_data_mask].copy()
+            # Use all months (including 0 expenses) for calculations
+            moving_avg = calculate_moving_average(abs(complete_monthly_data["amount"]))
 
-            if len(actual_data) >= 3:
-                moving_avg = calculate_moving_average(abs(actual_data["amount"]))
+            # Pre-format hover text for moving average
+            moving_avg_hover = [format_currency(val) for val in moving_avg]
 
-                # Pre-format hover text for moving average
-                moving_avg_hover = [format_currency(val) for val in moving_avg]
-
-                fig.add_trace(
-                    go.Scatter(
-                        x=actual_data["month"],
-                        y=moving_avg,
-                        name="12-Month Moving Average",
-                        line=dict(color="#1f77b4", width=2, dash="dash"),
-                        mode="lines",
-                        hovertemplate="<b>%{x}</b><br>"
-                        + "12-Month Moving Average: %{customdata}<br>"
-                        + "<extra></extra>",
-                        customdata=moving_avg_hover,
-                    )
+            fig.add_trace(
+                go.Scatter(
+                    x=complete_monthly_data["month"],
+                    y=moving_avg,
+                    name="12-Month Moving Average",
+                    line=dict(color="#1f77b4", width=2, dash="dash"),
+                    mode="lines",
+                    hovertemplate="<b>%{x}</b><br>"
+                    + "12-Month Moving Average: %{customdata}<br>"
+                    + "<extra></extra>",
+                    customdata=moving_avg_hover,
                 )
+            )
 
-                # Forecast trend line - flipped to positive side
-                trend_line, forecast = calculate_forecast_trend(
-                    abs(actual_data["amount"])
+            # Forecast trend line - flipped to positive side
+            trend_line, forecast = calculate_forecast_trend(
+                abs(complete_monthly_data["amount"])
+            )
+
+            # Pre-format hover text for trend line
+            trend_line_hover = [format_currency(val) for val in trend_line]
+
+            fig.add_trace(
+                go.Scatter(
+                    x=complete_monthly_data["month"],
+                    y=trend_line,
+                    name="12-Month Forecast Trend",
+                    line=dict(color="#d62728", width=2),
+                    mode="lines",
+                    hovertemplate="<b>%{x}</b><br>"
+                    + "12-Month Forecast Trend: %{customdata}<br>"
+                    + "<extra></extra>",
+                    customdata=trend_line_hover,
                 )
+            )
 
-                # Pre-format hover text for trend line
-                trend_line_hover = [format_currency(val) for val in trend_line]
+            # Add forecast extension - flipped to positive side
+            last_month_date = complete_monthly_data["month_date"].iloc[-1]
+            future_months = pd.date_range(
+                start=last_month_date + pd.DateOffset(months=1),
+                periods=3,
+                freq="MS",
+            )
 
-                fig.add_trace(
-                    go.Scatter(
-                        x=actual_data["month"],
-                        y=trend_line,
-                        name="12-Month Forecast Trend",
-                        line=dict(color="#d62728", width=2),
-                        mode="lines",
-                        hovertemplate="<b>%{x}</b><br>"
-                        + "12-Month Forecast Trend: %{customdata}<br>"
-                        + "<extra></extra>",
-                        customdata=trend_line_hover,
-                    )
+            # Pre-format hover text for forecast
+            forecast_hover = [format_currency(val) for val in abs(forecast)]
+
+            fig.add_trace(
+                go.Scatter(
+                    x=future_months.strftime("%Y-%m"),
+                    y=abs(forecast),
+                    name="Forecast (Next 3 Months)",
+                    line=dict(color="#d62728", width=2, dash="dot"),
+                    mode="lines",
+                    hovertemplate="<b>%{x}</b><br>"
+                    + "Forecast: %{customdata}<br>"
+                    + "<extra></extra>",
+                    customdata=forecast_hover,
                 )
-
-                # Add forecast extension - flipped to positive side
-                future_months = pd.date_range(
-                    start=actual_data["month_date"].iloc[-1] + pd.DateOffset(months=1),
-                    periods=3,
-                    freq="MS",
-                )
-
-                # Pre-format hover text for forecast
-                forecast_hover = [format_currency(val) for val in abs(forecast)]
-
-                fig.add_trace(
-                    go.Scatter(
-                        x=future_months.strftime("%Y-%m"),
-                        y=abs(forecast),
-                        name="Forecast (Next 3 Months)",
-                        line=dict(color="#d62728", width=2, dash="dot"),
-                        mode="lines",
-                        hovertemplate="<b>%{x}</b><br>"
-                        + "Forecast: %{customdata}<br>"
-                        + "<extra></extra>",
-                        customdata=forecast_hover,
-                    )
-                )
+            )
 
         # Add target goal line if available
         if target_amount is not None and target_amount > 0:
