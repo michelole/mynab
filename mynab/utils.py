@@ -834,13 +834,14 @@ def create_unified_plot(
                 "month": global_month_range.strftime("%Y-%m"),
             }
         )
-
-        # Merge with actual data to include months with 0 expenses
+        # Only use months in the filtered period for plotting
+        monthly_expenses = monthly_expenses[
+            monthly_expenses["month"].isin(all_months_df["month"])
+        ]
+        # Merge with actual data to include months with 0 expenses, but only for filtered period
         complete_monthly_data = all_months_df.merge(
             monthly_expenses[["month", "amount"]], on="month", how="left"
         ).fillna(0)
-
-        # Sort by month date for proper ordering
         complete_monthly_data = complete_monthly_data.sort_values("month_date")
 
         # Bar chart for actual expenses (including 0 values) - flipped to positive side

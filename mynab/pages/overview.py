@@ -22,7 +22,7 @@ def create_category_group_plot(
     group_name,
     transactions_df,
     budget_df,
-    global_month_range,
+    month_range,  # renamed from global_month_range
     categories_data,
     y_range=None,
 ):
@@ -31,7 +31,7 @@ def create_category_group_plot(
         group_name,
         transactions_df,
         budget_df,
-        global_month_range,
+        month_range,  # pass the filtered month range
         categories_data,
         "category_group",
         y_range,
@@ -367,6 +367,9 @@ global_month_range, earliest_date, latest_date = get_global_month_range(
     transactions_df, start_date, end_date
 )
 
+# After filtering filtered_transactions_df by date, calculate filtered_month_range
+filtered_month_range = pd.date_range(start=start_date, end=end_date, freq="MS")
+
 # Calculate global y-axis ranges if enabled
 global_scale_enabled = st.session_state.get("global_scale_enabled", False)
 overview_y_range = None
@@ -603,7 +606,7 @@ for i in range(0, len(selected_category_groups), cols_per_row):
                     group_name,
                     filtered_transactions_df,
                     budget_df,
-                    global_month_range,
+                    filtered_month_range,  # <-- use filtered_month_range here
                     categories_data,
                     category_group_y_range,
                 )
