@@ -85,17 +85,23 @@ def main():
             & (filtered_transactions_df["category"].isin(selected_categories))
         ].copy()
 
-    # Display filtered transactions with selected columns in new order
+    # Display filtered transactions with selected columns, hiding 'category_group' and making 'import_payee_name_original' even wider
     display_columns = [
         "date",
         "import_payee_name_original",
-        "import_payee_name",
         "payee_name",
         "amount",
         "category",
-        "category_group",
     ]
-    st.dataframe(filtered_transactions_df[display_columns], use_container_width=True)
+    st.dataframe(
+        filtered_transactions_df[display_columns],
+        use_container_width=True,
+        column_config={
+            "import_payee_name_original": st.column_config.TextColumn(
+                "import_payee_name_original", width="large"
+            ),
+        },
+    )
 
 
 if __name__ == "__main__":
