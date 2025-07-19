@@ -39,7 +39,12 @@ def create_category_group_plot(
 
 
 def create_comprehensive_plot(
-    data_type, transactions_df, budget_df, global_month_range, y_range=None
+    data_type,
+    transactions_df,
+    budget_df,
+    global_month_range,
+    y_range=None,
+    target_goal=None,
 ):
     """Create comprehensive plot for total income, total expense, or total net income"""
     # Filter data based on type
@@ -232,6 +237,24 @@ def create_comprehensive_plot(
                     customdata=forecast_hover,
                 )
             )
+
+    # Add target goal line for total_expense if provided
+    if data_type == "total_expense" and target_goal is not None and target_goal > 0:
+        all_months = complete_monthly_data["month"].tolist()
+        if "future_months" in locals():
+            all_months += future_months.strftime("%Y-%m").tolist()
+        target_hover = [format_currency(target_goal)] * len(all_months)
+        fig.add_trace(
+            go.Scatter(
+                x=all_months,
+                y=[target_goal] * len(all_months),
+                name=f"Target Goal ({format_currency(target_goal)})",
+                line=dict(color="#2ca02c", width=3, dash="solid"),
+                mode="lines",
+                hovertemplate="<b>%{x}</b><br>Target Goal: %{customdata}<br><extra></extra>",
+                customdata=target_hover,
+            )
+        )
 
     # Update layout
     layout_update = {
@@ -528,12 +551,20 @@ with col1:
 
 with col2:
     st.subheader("💸 Total Expenses")
+    # Calculate total target goal for selected category groups
+    # (before rendering the Total Expenses plot)
+    total_target_goal = sum(
+        cat.get("target_amount", 0) or 0
+        for cat in categories_data
+        if cat["group"] in selected_category_groups and cat.get("target_amount")
+    )
     expense_fig = create_comprehensive_plot(
         "total_expense",
         filtered_transactions_df,
         budget_df,
         global_month_range,
         overview_y_range,
+        target_goal=total_target_goal,
     )
     if expense_fig:
         st.plotly_chart(expense_fig, use_container_width=True)
