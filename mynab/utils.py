@@ -214,6 +214,16 @@ def process_transactions_data(transactions_response, categories_data):
                         "transaction_id": transaction.id,
                         "account_id": account_id,
                         "account_name": account_name,
+                        "import_payee_name": getattr(
+                            subtransaction,
+                            "import_payee_name",
+                            getattr(transaction, "import_payee_name", ""),
+                        ),
+                        "import_payee_name_original": getattr(
+                            subtransaction,
+                            "import_payee_name_original",
+                            getattr(transaction, "import_payee_name_original", ""),
+                        ),
                     }
                 )
         else:
@@ -239,6 +249,10 @@ def process_transactions_data(transactions_response, categories_data):
                     "transaction_id": transaction.id,
                     "account_id": account_id,
                     "account_name": account_name,
+                    "import_payee_name": getattr(transaction, "import_payee_name", ""),
+                    "import_payee_name_original": getattr(
+                        transaction, "import_payee_name_original", ""
+                    ),
                 }
             )
 
