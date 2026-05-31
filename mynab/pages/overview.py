@@ -297,7 +297,7 @@ start_date = st.session_state.get("start_date")
 end_date = st.session_state.get("end_date")
 
 if start_date is None or end_date is None:
-    st.error("Date range not set. Please configure the date range in the sidebar.")
+    st.error("Month range not set. Please configure the month range in the sidebar.")
     st.stop()
 
 # Get data from session state

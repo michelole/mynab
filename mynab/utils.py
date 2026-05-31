@@ -638,18 +638,53 @@ def calculate_category_group_available_budget(group_name, budget_df):
     return total_available
 
 
+def month_start(d):
+    """First calendar day of the month containing d."""
+    d = pd.Timestamp(d)
+    return date(d.year, d.month, 1)
+
+
+def month_end(d):
+    """Last calendar day of the month containing d."""
+    return (pd.Timestamp(month_start(d)) + pd.offsets.MonthEnd(0)).date()
+
+
+def list_available_months(transactions_df=None):
+    """First-of-month dates for every month in the data (or 2010 through today)."""
+    today = date.today()
+    if isinstance(transactions_df, pd.DataFrame) and not transactions_df.empty:
+        df = transactions_df.copy()
+        df["date"] = pd.to_datetime(df["date"])
+        range_start = df["date"].min().replace(day=1)
+        range_end = df["date"].max()
+    else:
+        range_start = pd.Timestamp(2010, 1, 1)
+        range_end = pd.Timestamp(today)
+    return [m.date() for m in pd.date_range(start=range_start, end=range_end, freq="MS")]
+
+
+def format_month_option(month_start_date):
+    return month_start_date.strftime("%B %Y")
+
+
+def dates_from_month_selection(start_month, end_month):
+    """Inclusive bounds for a start month and end month (both first-of-month)."""
+    return month_start(start_month), month_end(end_month)
+
+
 def filter_data_by_date_range(transactions_df, start_date, end_date):
-    """Filter transactions dataframe by date range"""
+    """Filter transactions to full months (start month through end month inclusive)."""
     if transactions_df.empty:
         return transactions_df
 
-    # Ensure date column is datetime
+    range_start = month_start(start_date)
+    range_end = month_end(end_date)
+
     filtered_df = transactions_df.copy()
     filtered_df["date"] = pd.to_datetime(filtered_df["date"])
 
-    # Filter by date range
-    mask = (filtered_df["date"] >= pd.Timestamp(start_date)) & (
-        filtered_df["date"] <= pd.Timestamp(end_date)
+    mask = (filtered_df["date"] >= pd.Timestamp(range_start)) & (
+        filtered_df["date"] <= pd.Timestamp(range_end)
     )
     return filtered_df[mask]
 
@@ -664,27 +699,33 @@ def safe_strftime(dt):
         return str(dt)
 
 
-def get_default_date_range():
-    """Default display range: last 12 calendar months through end of last complete month (or today if day >= 20)."""
+def get_default_month_range():
+    """Default display range: last 12 calendar months (first-of-month for each bound)."""
     today = date.today()
 
     if today.day >= 20:
-        default_end_date = today
+        default_end_month = month_start(today)
     else:
         first_day_current_month = date(today.year, today.month, 1)
-        default_end_date = first_day_current_month - timedelta(days=1)
+        default_end_month = month_start(first_day_current_month - timedelta(days=1))
 
-    end_month_start = default_end_date.replace(day=1)
-    start_month = pd.Timestamp(end_month_start) - pd.DateOffset(months=11)
-    default_start_date = start_month.date()
+    default_start_month = (
+        pd.Timestamp(default_end_month) - pd.DateOffset(months=11)
+    ).date()
 
-    return default_start_date, default_end_date
+    return default_start_month, default_end_month
+
+
+def get_default_date_range():
+    """Backward-compatible inclusive date bounds from default month range."""
+    start_month, end_month = get_default_month_range()
+    return dates_from_month_selection(start_month, end_month)
 
 
 def get_global_month_range(transactions_df, start_date, end_date):
-    """Month range for plots, aligned to the sidebar start/end dates."""
-    earliest_date = pd.Timestamp(start_date).replace(day=1)
-    latest_date = pd.Timestamp(end_date)
+    """Month range for plots, aligned to the sidebar month selection."""
+    earliest_date = pd.Timestamp(month_start(start_date))
+    latest_date = pd.Timestamp(month_start(end_date))
     global_month_range = pd.date_range(
         start=earliest_date, end=latest_date, freq="MS"
     )

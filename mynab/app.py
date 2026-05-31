@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
 import os
 
 from mynab.utils import (
@@ -8,7 +7,11 @@ from mynab.utils import (
     process_categories_data,
     process_transactions_data,
     process_months_data,
-    get_default_date_range,
+    get_default_month_range,
+    list_available_months,
+    format_month_option,
+    dates_from_month_selection,
+    month_start,
     get_excluded_groups,
     get_default_category_groups,
     get_default_categories,
@@ -129,53 +132,52 @@ def load_data():
 def setup_sidebar():
     """Setup sidebar with filters"""
     with st.sidebar:
-        st.header("📅 Date Range")
+        st.header("📅 Month Range")
 
-        # st.info(f"**{st.session_state.budget_name}**")
+        available_months = list_available_months(st.session_state.transactions_df)
+        month_labels = [format_month_option(m) for m in available_months]
+        label_to_month = dict(zip(month_labels, available_months))
 
-        # Get default date range
-        default_start_date, default_end_date = get_default_date_range()
+        default_start_month, default_end_month = get_default_month_range()
+        if available_months:
+            default_start_month = max(default_start_month, available_months[0])
+            default_end_month = min(default_end_month, available_months[-1])
 
-        # Get the actual date range from the data
-        if (
-            st.session_state.transactions_df is not None
-            and not st.session_state.transactions_df.empty
-        ):
-            filtered_transactions_df = st.session_state.transactions_df.copy()
-            filtered_transactions_df["date"] = pd.to_datetime(
-                filtered_transactions_df["date"]
+        if st.session_state.start_date and st.session_state.end_date:
+            current_start_month = month_start(st.session_state.start_date)
+            current_end_month = month_start(st.session_state.end_date)
+        else:
+            current_start_month = default_start_month
+            current_end_month = default_end_month
+
+        def _month_index(month, fallback):
+            return (
+                available_months.index(month)
+                if month in available_months
+                else available_months.index(fallback)
             )
-            data_start_date = filtered_transactions_df["date"].min().date()
-            data_end_date = filtered_transactions_df["date"].max().date()
 
-            # Clamp defaults to available data (display default stays last 12 months)
-            default_end_date = min(data_end_date, default_end_date)
-            default_start_date = max(data_start_date, default_start_date)
-
-        # Date picker in sidebar
-        today = date.today()
-        start_date = st.date_input(
-            "Start Date",
-            value=st.session_state.start_date or default_start_date,
-            min_value=date(2010, 1, 1),
-            max_value=today,
-            help="Select the start date for filtering data",
+        start_label = st.selectbox(
+            "Start month",
+            month_labels,
+            index=_month_index(current_start_month, default_start_month),
+            help="First month included in charts and totals",
+        )
+        end_label = st.selectbox(
+            "End month",
+            month_labels,
+            index=_month_index(current_end_month, default_end_month),
+            help="Last month included in charts and totals",
         )
 
-        end_date = st.date_input(
-            "End Date",
-            value=st.session_state.end_date or default_end_date,
-            min_value=date(2010, 1, 1),
-            max_value=today,
-            help="Select the end date for filtering data",
-        )
+        start_month = label_to_month[start_label]
+        end_month = label_to_month[end_label]
 
-        # Validate date range
-        if start_date > end_date:
-            st.error("Start date must be before end date!")
+        if start_month > end_month:
+            st.error("Start month must be before or equal to end month!")
             return False
 
-        # Store in session state
+        start_date, end_date = dates_from_month_selection(start_month, end_month)
         st.session_state.start_date = start_date
         st.session_state.end_date = end_date
 
