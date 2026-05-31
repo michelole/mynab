@@ -207,6 +207,33 @@ def setup_sidebar():
             st.session_state.start_date = start_date
             st.session_state.end_date = end_date
 
+        st.header("📏 Plot Settings")
+
+        ma_label = next(
+            (
+                label
+                for label, months in MOVING_AVERAGE_WINDOW_OPTIONS.items()
+                if months == st.session_state.moving_average_window
+            ),
+            "12 months",
+        )
+        selected_ma_label = st.selectbox(
+            "Moving average window",
+            options=list(MOVING_AVERAGE_WINDOW_OPTIONS.keys()),
+            index=list(MOVING_AVERAGE_WINDOW_OPTIONS.keys()).index(ma_label),
+            help="Lookback for the moving average line on plots. Does not affect the 12-month forecast trend.",
+        )
+        st.session_state.moving_average_window = MOVING_AVERAGE_WINDOW_OPTIONS[
+            selected_ma_label
+        ]
+
+        global_scale_enabled = st.checkbox(
+            "Global Scale",
+            value=st.session_state.global_scale_enabled,
+            help="When enabled, all plots in a section will share the same y-axis scale for better comparison.",
+        )
+        st.session_state.global_scale_enabled = global_scale_enabled
+
         # Category Group Filter in sidebar
         st.header("📊 Category Groups")
 
@@ -282,36 +309,6 @@ def setup_sidebar():
 
             # Store in session state
             st.session_state.selected_categories = selected_categories
-
-            # Global Scale Control
-        st.header("📏 Plot Settings")
-
-        ma_label = next(
-            (
-                label
-                for label, months in MOVING_AVERAGE_WINDOW_OPTIONS.items()
-                if months == st.session_state.moving_average_window
-            ),
-            "12 months",
-        )
-        selected_ma_label = st.selectbox(
-            "Moving average window",
-            options=list(MOVING_AVERAGE_WINDOW_OPTIONS.keys()),
-            index=list(MOVING_AVERAGE_WINDOW_OPTIONS.keys()).index(ma_label),
-            help="Lookback for the moving average line on plots. Does not affect the 12-month forecast trend.",
-        )
-        st.session_state.moving_average_window = MOVING_AVERAGE_WINDOW_OPTIONS[
-            selected_ma_label
-        ]
-
-        global_scale_enabled = st.checkbox(
-            "Global Scale",
-            value=st.session_state.global_scale_enabled,
-            help="When enabled, all plots in a section will share the same y-axis scale for better comparison.",
-        )
-
-        # Store in session state
-        st.session_state.global_scale_enabled = global_scale_enabled
 
     return True
 

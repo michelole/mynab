@@ -5,10 +5,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta, date
 from ynab.configuration import Configuration
 from ynab.api_client import ApiClient
-from ynab.api.budgets_api import BudgetsApi
-from ynab.api.categories_api import CategoriesApi
-from ynab.api.transactions_api import TransactionsApi
-from ynab.api.months_api import MonthsApi
+from ynab.api import PlansApi, CategoriesApi, TransactionsApi, MonthsApi, AccountsApi
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -36,25 +33,21 @@ def get_ynab_data(access_token):
     try:
         configuration = Configuration(access_token=access_token)
         with ApiClient(configuration) as api_client:
-            # Get budgets
-            budgets_api = BudgetsApi(api_client)
-            budgets_response = budgets_api.get_budgets()
+            plans_api = PlansApi(api_client)
+            plans_response = plans_api.get_plans()
 
-            if not budgets_response.data.budgets:
-                st.error("No budgets found in your YNAB account.")
+            if not plans_response.data.plans:
+                st.error("No plans found in your YNAB account.")
                 return None, None, None, None, None, None
 
-            budget_id = budgets_response.data.budgets[0].id
-            budget_name = budgets_response.data.budgets[0].name
+            plan = plans_response.data.plans[0]
+            budget_id = str(plan.id)
+            budget_name = plan.name
 
-            # Get categories
             categories_api = CategoriesApi(api_client)
             categories_response = categories_api.get_categories(budget_id)
 
-            # Get transactions for the last 24 months
             transactions_api = TransactionsApi(api_client)
-
-            # Calculate date range (last 24 months)
             end_date = datetime.now()
             start_date = end_date - timedelta(days=730)
 
@@ -62,26 +55,21 @@ def get_ynab_data(access_token):
                 budget_id, since_date=start_date.date()
             )
 
-            # Get current month budget data for categories
             months_api = MonthsApi(api_client)
-            current_month = (
-                datetime.now().replace(day=1).date()
-            )  # Use first day of current month
-            months_response = months_api.get_budget_month(budget_id, current_month)
+            current_month = datetime.now().replace(day=1).date()
+            months_response = months_api.get_plan_month(budget_id, current_month)
 
-            # Get accounts
-            accounts_response = budgets_api.get_budget_by_id(budget_id)
+            accounts_api = AccountsApi(api_client)
+            accounts_response = accounts_api.get_accounts(budget_id)
             accounts_list = []
-            if (
-                hasattr(accounts_response.data.budget, "accounts")
-                and accounts_response.data.budget.accounts
-            ):
-                for acc in accounts_response.data.budget.accounts:
+            if accounts_response.data.accounts:
+                for acc in accounts_response.data.accounts:
+                    acc_type = getattr(acc, "type", None)
                     accounts_list.append(
                         {
-                            "id": acc.id,
+                            "id": str(acc.id),
                             "name": acc.name,
-                            "type": getattr(acc, "type", None),
+                            "type": acc_type.value if acc_type is not None else None,
                             "on_budget": getattr(acc, "on_budget", None),
                             "closed": getattr(acc, "closed", None),
                         }

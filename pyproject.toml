@@ -24,11 +24,11 @@ classifiers = [
 ]
 
 dependencies = [
-    "streamlit~=1.46.0",
-    "ynab>=1.4.0",
-    "pandas>=2.0.0",
-    "plotly>=5.15.0",
-    "numpy>=1.24.0",
+    "streamlit>=1.58.0",
+    "ynab>=4.1.0",
+    "pandas>=2.3.0",
+    "plotly>=6.0.0",
+    "numpy>=2.0.0",
     "python-dotenv>=1.0.0",
     "watchdog>=6.0.0",
 ]
@@ -55,7 +55,7 @@ addopts = "-v --tb=short"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4.1",
-    "ruff>=0.12.2",
-    "ty"
+    "pytest>=9.0.0",
+    "ruff>=0.15.0",
+    "ty>=0.0.40",
 ]
