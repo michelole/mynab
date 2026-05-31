@@ -154,8 +154,8 @@ def create_account_plot(account_name, account_df, global_month_range):
             ],
         )
     )
+    months_to_plot = complete_monthly_data["month"].tolist()
     if ma_series is not None:
-        months_to_plot = complete_monthly_data["month"].tolist()
         ma_plot = map_moving_average_to_months(ma_series, months_to_plot)
         ma_label = moving_average_label(ma_window)
         fig.add_trace(

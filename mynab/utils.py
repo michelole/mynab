@@ -341,6 +341,95 @@ def map_moving_average_to_months(ma_series, months_to_plot):
     return [ma_map.get(m, None) for m in months_to_plot]
 
 
+def _reindex_monthly_series(monthly):
+    if monthly is None or len(monthly) == 0:
+        return None
+    full_month_index = pd.period_range(
+        start=monthly.index.min(),
+        end=monthly.index.max(),
+        freq="M",
+    )
+    return monthly.reindex(full_month_index, fill_value=0)
+
+
+def build_entity_monthly_series(
+    plot_type, name, transactions_df=None, abs_values=False
+):
+    """Monthly totals from full transaction history (ignores sidebar date range)."""
+    if transactions_df is None:
+        transactions_df = st.session_state.get("transactions_df")
+    if not isinstance(transactions_df, pd.DataFrame) or transactions_df.empty:
+        return None
+
+    ft = transactions_df.copy()
+    ft["date"] = pd.to_datetime(ft["date"])
+    ft["month"] = ft["date"].dt.to_period("M")
+    if plot_type == "category_group":
+        ft = ft[ft["category_group"] == name]
+    else:
+        ft = ft[ft["category"] == name]
+    monthly = ft.groupby("month")["amount"].sum().sort_index()
+    series = _reindex_monthly_series(monthly)
+    if series is None:
+        return None
+    return abs(series) if abs_values else series
+
+
+def build_overview_monthly_series(data_type, transactions_df=None):
+    """Monthly totals from full history for overview moving averages."""
+    if transactions_df is None:
+        transactions_df = st.session_state.get("transactions_df")
+    if not isinstance(transactions_df, pd.DataFrame) or transactions_df.empty:
+        return None
+
+    df = transactions_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df["month"] = df["date"].dt.to_period("M")
+
+    if data_type == "total_income":
+        df = df[
+            (df["category"] == "Inflow: Ready to Assign")
+            & (df["payee_name"] != "Starting Balance")
+        ]
+        monthly = df.groupby("month")["amount"].sum()
+    elif data_type == "total_expense":
+        df = df[
+            (df["category_group"].astype(str) != "nan")
+            & (df["category_group"].astype(str) != "")
+        ]
+        monthly = df.groupby("month")["amount"].sum().abs()
+    elif data_type == "total_net_income":
+        income_df = df[
+            (df["category"] == "Inflow: Ready to Assign")
+            & (df["payee_name"] != "Starting Balance")
+        ]
+        expense_df = df[
+            (df["category_group"].astype(str) != "nan")
+            & (df["category_group"].astype(str) != "")
+        ]
+        monthly_income = income_df.groupby("month")["amount"].sum()
+        monthly_expenses = expense_df.groupby("month")["amount"].sum()
+        all_months = pd.concat([monthly_income, monthly_expenses]).index.unique()
+        monthly = pd.Series(index=all_months, dtype=float)
+        for month in all_months:
+            monthly[month] = monthly_income.get(month, 0) + monthly_expenses.get(
+                month, 0
+            )
+    else:
+        return None
+
+    return _reindex_monthly_series(monthly.sort_index())
+
+
+def moving_average_for_plot_months(full_monthly_series, months_to_plot, window=None):
+    """Moving average from full history, values for selected plot months only."""
+    if full_monthly_series is None or len(full_monthly_series) < 2:
+        return None
+    window = window or get_moving_average_window()
+    ma_full = calculate_moving_average(full_monthly_series, window=window)
+    return map_moving_average_to_months(ma_full, months_to_plot)
+
+
 def calculate_moving_average(data, window=12):
     """Calculate moving average for the given data"""
     if len(data) < 2:
@@ -522,47 +611,12 @@ def get_default_date_range():
 
 
 def get_global_month_range(transactions_df, start_date, end_date):
-    """Calculate global month range from transactions data"""
-    if isinstance(transactions_df, pd.DataFrame) and not transactions_df.empty:
-        all_transactions = transactions_df.copy()
-        all_transactions["date"] = pd.to_datetime(all_transactions["date"])
-        all_transactions = all_transactions.reset_index(drop=True)
-        all_transactions["month"] = all_transactions["date"].dt.to_period("M")
-
-        # Get the earliest and latest months from all data
-        earliest_month = all_transactions["month"].min()
-        latest_month = all_transactions["month"].max()
-
-        # Convert to datetime for date_range, handle NaTType
-        try:
-            # Try to convert periods to timestamps
-            earliest_date = (
-                earliest_month.to_timestamp()
-                if hasattr(earliest_month, "to_timestamp")
-                else pd.Timestamp(start_date)
-            )
-            latest_date = (
-                latest_month.to_timestamp()
-                if hasattr(latest_month, "to_timestamp")
-                else pd.Timestamp(end_date)
-            )
-            global_month_range = pd.date_range(
-                start=earliest_date, end=latest_date, freq="MS"
-            )
-        except (AttributeError, ValueError, TypeError):
-            # Fallback to default date range
-            global_month_range = pd.date_range(
-                start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq="MS"
-            )
-            earliest_date = pd.Timestamp(start_date)
-            latest_date = pd.Timestamp(end_date)
-    else:
-        global_month_range = pd.date_range(
-            start=pd.Timestamp(start_date), end=pd.Timestamp(end_date), freq="MS"
-        )
-        earliest_date = pd.Timestamp(start_date)
-        latest_date = pd.Timestamp(end_date)
-
+    """Month range for plots, aligned to the sidebar start/end dates."""
+    earliest_date = pd.Timestamp(start_date).replace(day=1)
+    latest_date = pd.Timestamp(end_date)
+    global_month_range = pd.date_range(
+        start=earliest_date, end=latest_date, freq="MS"
+    )
     return global_month_range, earliest_date, latest_date
 
 
@@ -913,53 +967,32 @@ def create_unified_plot(
             )
         )
 
-        # Moving average using full history - flipped to positive side
         ma_window = get_moving_average_window()
         ma_label = moving_average_label(ma_window)
+        months_to_plot = complete_monthly_data["month"].tolist()
+        full_series_abs = build_entity_monthly_series(
+            plot_type, name, abs_values=True
+        )
+        ma_plot = moving_average_for_plot_months(
+            full_series_abs, months_to_plot, window=ma_window
+        )
+        if ma_plot is not None:
+            fig.add_trace(
+                go.Scatter(
+                    x=months_to_plot,
+                    y=ma_plot,
+                    name=ma_label,
+                    line=dict(color="#1f77b4", width=2, dash="dash"),
+                    mode="lines",
+                    hovertemplate=f"<b>%{{x}}</b><br>{ma_label}: %{{customdata}}<br><extra></extra>",
+                    customdata=[
+                        format_currency(v) if v is not None else "€0"
+                        for v in ma_plot
+                    ],
+                )
+            )
+
         if len(complete_monthly_data) >= 3:
-            # Build full-history monthly series for this entity
-            full_transactions = st.session_state.get("transactions_df")
-            full_month_series = None
-            if (
-                isinstance(full_transactions, pd.DataFrame)
-                and not full_transactions.empty
-            ):
-                ft = full_transactions.copy()
-                ft["date"] = pd.to_datetime(ft["date"])
-                ft["month"] = ft["date"].dt.to_period("M")
-                if plot_type == "category_group":
-                    ft = ft[ft["category_group"] == name]
-                else:
-                    ft = ft[ft["category"] == name]
-                full_month_series = ft.groupby("month")["amount"].sum().sort_index()
-
-            if full_month_series is not None and len(full_month_series) > 0:
-                full_month_index = pd.period_range(
-                    start=full_month_series.index.min(),
-                    end=full_month_series.index.max(),
-                    freq="M",
-                )
-                full_series = full_month_series.reindex(full_month_index, fill_value=0)
-                full_series_abs = abs(full_series)
-                ma_full = calculate_moving_average(full_series_abs, window=ma_window)
-                months_to_plot = complete_monthly_data["month"].tolist()
-                ma_plot = map_moving_average_to_months(ma_full, months_to_plot)
-
-                fig.add_trace(
-                    go.Scatter(
-                        x=months_to_plot,
-                        y=ma_plot,
-                        name=ma_label,
-                        line=dict(color="#1f77b4", width=2, dash="dash"),
-                        mode="lines",
-                        hovertemplate=f"<b>%{{x}}</b><br>{ma_label}: %{{customdata}}<br><extra></extra>",
-                        customdata=[
-                            format_currency(v) if v is not None else "€0"
-                            for v in ma_plot
-                        ],
-                    )
-                )
-
             # Forecast trend line - flipped to positive side
             trend_line, forecast = calculate_forecast_trend(
                 abs(complete_monthly_data["amount"])

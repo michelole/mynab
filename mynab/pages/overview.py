@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from mynab.utils import (
-    calculate_moving_average,
     calculate_forecast_trend,
     filter_data_by_date_range,
     get_global_month_range,
@@ -12,6 +11,8 @@ from mynab.utils import (
     format_currency,
     get_moving_average_window,
     moving_average_label,
+    build_overview_monthly_series,
+    moving_average_for_plot_months,
 )
 
 # Page configuration
@@ -156,9 +157,32 @@ def create_comprehensive_plot(
         )
     )
 
-    # Moving average line (if we have enough data) - flip expenses to positive side
+    ma_window = get_moving_average_window()
+    ma_label = moving_average_label(ma_window)
+    months_to_plot = complete_monthly_data["month"].tolist()
+    full_monthly = build_overview_monthly_series(data_type)
+    ma_plot = moving_average_for_plot_months(
+        full_monthly, months_to_plot, window=ma_window
+    )
+    if ma_plot is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=months_to_plot,
+                y=ma_plot,
+                name=ma_label,
+                line=dict(color="#1f77b4", width=2, dash="dash"),
+                mode="lines",
+                hovertemplate="<b>%{x}</b><br>"
+                + f"{ma_label}: %{{customdata}}<br>"
+                + "<extra></extra>",
+                customdata=[
+                    format_currency(v) if v is not None else "€0" for v in ma_plot
+                ],
+            )
+        )
+
+    # Forecast trend uses visible date range only
     if len(complete_monthly_data) >= 3:
-        # Use only the actual data (non-zero values) for calculations
         actual_data_mask = complete_monthly_data["amount"] != 0
         actual_data = complete_monthly_data[actual_data_mask].copy()
 
@@ -166,29 +190,6 @@ def create_comprehensive_plot(
             data_for_calculation = actual_data["amount"]
             if data_type == "total_expense":
                 data_for_calculation = abs(actual_data["amount"])
-
-            ma_window = get_moving_average_window()
-            ma_label = moving_average_label(ma_window)
-            moving_avg = calculate_moving_average(
-                data_for_calculation, window=ma_window
-            )
-
-            # Pre-format hover text for moving average
-            moving_avg_hover = [format_currency(val) for val in moving_avg]
-
-            fig.add_trace(
-                go.Scatter(
-                    x=actual_data["month"],
-                    y=moving_avg,
-                    name=ma_label,
-                    line=dict(color="#1f77b4", width=2, dash="dash"),
-                    mode="lines",
-                    hovertemplate="<b>%{x}</b><br>"
-                    + f"{ma_label}: %{{customdata}}<br>"
-                    + "<extra></extra>",
-                    customdata=moving_avg_hover,
-                )
-            )
 
             # Forecast trend line - flip expenses to positive side
             trend_line, forecast = calculate_forecast_trend(data_for_calculation)
@@ -368,13 +369,9 @@ if (
         & (budget_df["category"].isin(selected_categories))
     ].copy()
 
-# Calculate global month range from original data (before category filtering)
-global_month_range, earliest_date, latest_date = get_global_month_range(
-    transactions_df, start_date, end_date
+global_month_range, _, _ = get_global_month_range(
+    filtered_transactions_df, start_date, end_date
 )
-
-# After filtering filtered_transactions_df by date, calculate filtered_month_range
-filtered_month_range = pd.date_range(start=start_date, end=end_date, freq="MS")
 
 # Calculate global y-axis ranges if enabled
 global_scale_enabled = st.session_state.get("global_scale_enabled", False)
