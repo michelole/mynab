@@ -163,7 +163,7 @@ def create_account_plot(account_name, account_df, global_month_range):
                 x=months_to_plot,
                 y=ma_plot,
                 name=ma_label,
-                line=dict(color="#1f77b4", width=2, dash="dash"),
+                line=dict(color="#1f77b4", width=2, dash="dot"),
                 mode="lines",
                 hovertemplate=f"<b>%{{x}}</b><br>{ma_label}: %{{customdata}}<br><extra></extra>",
                 customdata=[
@@ -191,7 +191,7 @@ def create_account_plot(account_name, account_df, global_month_range):
                 x=future_months.strftime("%Y-%m"),
                 y=abs(forecast),
                 name="Forecast (Next 3 Months)",
-                line=dict(color="#d62728", width=2, dash="dot"),
+                line=dict(color="#d62728", width=2, dash="dash"),
                 mode="lines",
                 hovertemplate="<b>%{x}</b><br>Forecast: %{customdata}<br><extra></extra>",
                 customdata=[format_currency(val) for val in abs(forecast)],
