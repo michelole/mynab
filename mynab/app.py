@@ -148,9 +148,9 @@ def setup_sidebar():
             data_start_date = filtered_transactions_df["date"].min().date()
             data_end_date = filtered_transactions_df["date"].max().date()
 
-            # Use data range as defaults if available, but cap end date to last day of prior month
-            default_start_date = data_start_date
+            # Clamp defaults to available data (display default stays last 12 months)
             default_end_date = min(data_end_date, default_end_date)
+            default_start_date = max(data_start_date, default_start_date)
 
         # Date picker in sidebar
         today = date.today()

@@ -627,21 +627,18 @@ def safe_strftime(dt):
 
 
 def get_default_date_range():
-    """Get default date range (last day of prior month to 1 year before, or current day if day >= 20)"""
+    """Default display range: last 12 calendar months through end of last complete month (or today if day >= 20)."""
     today = date.today()
 
-    # Check if current day is 20 or more
     if today.day >= 20:
-        # If current day is 20 or more, use today as end date
         default_end_date = today
     else:
-        # Otherwise, use last day of prior month
         first_day_current_month = date(today.year, today.month, 1)
         default_end_date = first_day_current_month - timedelta(days=1)
 
-    default_start_date = default_end_date - timedelta(
-        days=365
-    )  # 1 year before end date
+    end_month_start = default_end_date.replace(day=1)
+    start_month = pd.Timestamp(end_month_start) - pd.DateOffset(months=11)
+    default_start_date = start_month.date()
 
     return default_start_date, default_end_date
 
