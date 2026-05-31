@@ -341,6 +341,44 @@ def map_moving_average_to_months(ma_series, months_to_plot):
     return [ma_map.get(m, None) for m in months_to_plot]
 
 
+def build_account_net_worth_series(
+    account_name, transactions_df=None, end_period=None
+):
+    """Cumulative net worth by month from full account history."""
+    if transactions_df is None:
+        transactions_df = st.session_state.get("transactions_df")
+    if not isinstance(transactions_df, pd.DataFrame) or transactions_df.empty:
+        return None
+
+    txf = transactions_df[transactions_df["account_name"] == account_name].copy()
+    if txf.empty:
+        return None
+
+    txf["date"] = pd.to_datetime(txf["date"])
+    txf["month"] = txf["date"].dt.to_period("M")
+    monthly_amt = txf.groupby("month")["amount"].sum().sort_index()
+    range_end = monthly_amt.index.max()
+    if end_period is not None:
+        range_end = max(range_end, end_period)
+    full_index = pd.period_range(
+        start=monthly_amt.index.min(), end=range_end, freq="M"
+    )
+    monthly_amt = monthly_amt.reindex(full_index, fill_value=0)
+    return monthly_amt.cumsum()
+
+
+def map_account_net_worth_to_months(net_worth_series, months_to_plot):
+    """Map cumulative net worth to plot months (0 before account activity, then ffill)."""
+    nw_map = {str(p): v for p, v in zip(net_worth_series.index, net_worth_series.values)}
+    values = []
+    last_val = 0.0
+    for month in months_to_plot:
+        if month in nw_map:
+            last_val = nw_map[month]
+        values.append(last_val)
+    return values
+
+
 def _reindex_monthly_series(monthly):
     if monthly is None or len(monthly) == 0:
         return None
