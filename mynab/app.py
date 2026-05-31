@@ -12,6 +12,9 @@ from mynab.utils import (
     format_month_option,
     dates_from_month_selection,
     month_start,
+    MONTH_RANGE_PRESET_OPTIONS,
+    DEFAULT_MONTH_RANGE_PRESET,
+    resolve_month_range_preset,
     get_excluded_groups,
     get_default_category_groups,
     get_default_categories,
@@ -76,6 +79,8 @@ def initialize_session_state():
         st.session_state.global_scale_enabled = True
     if "moving_average_window" not in st.session_state:
         st.session_state.moving_average_window = DEFAULT_MOVING_AVERAGE_WINDOW
+    if "month_range_preset" not in st.session_state:
+        st.session_state.month_range_preset = DEFAULT_MONTH_RANGE_PRESET
 
 
 def load_data():
@@ -135,51 +140,72 @@ def setup_sidebar():
         st.header("📅 Month Range")
 
         available_months = list_available_months(st.session_state.transactions_df)
-        month_labels = [format_month_option(m) for m in available_months]
-        label_to_month = dict(zip(month_labels, available_months))
+        preset_labels = MONTH_RANGE_PRESET_OPTIONS
+        current_preset = st.session_state.month_range_preset
+        if current_preset not in preset_labels:
+            current_preset = DEFAULT_MONTH_RANGE_PRESET
 
-        default_start_month, default_end_month = get_default_month_range()
-        if available_months:
-            default_start_month = max(default_start_month, available_months[0])
-            default_end_month = min(default_end_month, available_months[-1])
+        preset = st.selectbox(
+            "Time range",
+            preset_labels,
+            index=preset_labels.index(current_preset),
+            help="Quick range presets; choose Custom to pick start and end months",
+        )
+        st.session_state.month_range_preset = preset
 
-        if st.session_state.start_date and st.session_state.end_date:
-            current_start_month = month_start(st.session_state.start_date)
-            current_end_month = month_start(st.session_state.end_date)
+        if preset != "Custom":
+            start_month, end_month = resolve_month_range_preset(
+                preset, available_months
+            )
+            start_date, end_date = dates_from_month_selection(start_month, end_month)
+            st.session_state.start_date = start_date
+            st.session_state.end_date = end_date
         else:
-            current_start_month = default_start_month
-            current_end_month = default_end_month
+            month_labels = [format_month_option(m) for m in available_months]
+            label_to_month = dict(zip(month_labels, available_months))
 
-        def _month_index(month, fallback):
-            return (
-                available_months.index(month)
-                if month in available_months
-                else available_months.index(fallback)
+            default_start_month, default_end_month = get_default_month_range()
+            if available_months:
+                default_start_month = max(default_start_month, available_months[0])
+                default_end_month = min(default_end_month, available_months[-1])
+
+            if st.session_state.start_date and st.session_state.end_date:
+                current_start_month = month_start(st.session_state.start_date)
+                current_end_month = month_start(st.session_state.end_date)
+            else:
+                current_start_month = default_start_month
+                current_end_month = default_end_month
+
+            def _month_index(month, fallback):
+                return (
+                    available_months.index(month)
+                    if month in available_months
+                    else available_months.index(fallback)
+                )
+
+            start_label = st.selectbox(
+                "Start month",
+                month_labels,
+                index=_month_index(current_start_month, default_start_month),
+                help="First month included in charts and totals",
+            )
+            end_label = st.selectbox(
+                "End month",
+                month_labels,
+                index=_month_index(current_end_month, default_end_month),
+                help="Last month included in charts and totals",
             )
 
-        start_label = st.selectbox(
-            "Start month",
-            month_labels,
-            index=_month_index(current_start_month, default_start_month),
-            help="First month included in charts and totals",
-        )
-        end_label = st.selectbox(
-            "End month",
-            month_labels,
-            index=_month_index(current_end_month, default_end_month),
-            help="Last month included in charts and totals",
-        )
+            start_month = label_to_month[start_label]
+            end_month = label_to_month[end_label]
 
-        start_month = label_to_month[start_label]
-        end_month = label_to_month[end_label]
+            if start_month > end_month:
+                st.error("Start month must be before or equal to end month!")
+                return False
 
-        if start_month > end_month:
-            st.error("Start month must be before or equal to end month!")
-            return False
-
-        start_date, end_date = dates_from_month_selection(start_month, end_month)
-        st.session_state.start_date = start_date
-        st.session_state.end_date = end_date
+            start_date, end_date = dates_from_month_selection(start_month, end_month)
+            st.session_state.start_date = start_date
+            st.session_state.end_date = end_date
 
         # Category Group Filter in sidebar
         st.header("📊 Category Groups")

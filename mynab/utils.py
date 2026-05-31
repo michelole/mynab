@@ -699,21 +699,72 @@ def safe_strftime(dt):
         return str(dt)
 
 
+MONTH_RANGE_PRESET_OPTIONS = [
+    "Last 3 Months",
+    "Last 6 Months",
+    "Last 12 Months",
+    "Year to Date",
+    "Last Year",
+    "All Dates",
+    "Custom",
+]
+DEFAULT_MONTH_RANGE_PRESET = "Last 12 Months"
+
+
+def get_default_end_month():
+    """Latest month included in presets (current month from the 15th, else prior month)."""
+    today = date.today()
+    if today.day >= 15:
+        return month_start(today)
+    first_day_current_month = date(today.year, today.month, 1)
+    return month_start(first_day_current_month - timedelta(days=1))
+
+
+def clamp_month_range(start_month, end_month, available_months):
+    if not available_months:
+        return start_month, end_month
+    start_month = max(month_start(start_month), available_months[0])
+    end_month = min(month_start(end_month), available_months[-1])
+    if start_month > end_month:
+        end_month = start_month
+    return start_month, end_month
+
+
+def resolve_month_range_preset(preset, available_months):
+    """Return (start_month, end_month) as first-of-month dates for a sidebar preset."""
+    if preset == "All Dates":
+        if not available_months:
+            end_month = get_default_end_month()
+            start_month = (pd.Timestamp(end_month) - pd.DateOffset(months=11)).date()
+            return start_month, end_month
+        return available_months[0], available_months[-1]
+
+    end_month = get_default_end_month()
+    if available_months:
+        end_month = min(month_start(end_month), available_months[-1])
+        end_month = max(end_month, available_months[0])
+
+    if preset == "Last 3 Months":
+        start_month = (pd.Timestamp(end_month) - pd.DateOffset(months=2)).date()
+    elif preset == "Last 6 Months":
+        start_month = (pd.Timestamp(end_month) - pd.DateOffset(months=5)).date()
+    elif preset == "Last 12 Months":
+        start_month = (pd.Timestamp(end_month) - pd.DateOffset(months=11)).date()
+    elif preset == "Year to Date":
+        start_month = date(end_month.year, 1, 1)
+    elif preset == "Last Year":
+        year = end_month.year - 1
+        start_month = date(year, 1, 1)
+        end_month = date(year, 12, 1)
+    else:
+        raise ValueError(f"Unknown preset: {preset}")
+
+    return clamp_month_range(start_month, end_month, available_months)
+
+
 def get_default_month_range():
     """Default display range: last 12 calendar months (first-of-month for each bound)."""
-    today = date.today()
-
-    if today.day >= 15:
-        default_end_month = month_start(today)
-    else:
-        first_day_current_month = date(today.year, today.month, 1)
-        default_end_month = month_start(first_day_current_month - timedelta(days=1))
-
-    default_start_month = (
-        pd.Timestamp(default_end_month) - pd.DateOffset(months=11)
-    ).date()
-
-    return default_start_month, default_end_month
+    return resolve_month_range_preset("Last 12 Months", [])
 
 
 def get_default_date_range():
