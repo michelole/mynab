@@ -12,6 +12,8 @@ from mynab.utils import (
     get_excluded_groups,
     get_default_category_groups,
     get_default_categories,
+    MOVING_AVERAGE_WINDOW_OPTIONS,
+    DEFAULT_MOVING_AVERAGE_WINDOW,
 )
 
 # Page configuration
@@ -69,6 +71,8 @@ def initialize_session_state():
         st.session_state.category_groups = None
     if "global_scale_enabled" not in st.session_state:
         st.session_state.global_scale_enabled = True
+    if "moving_average_window" not in st.session_state:
+        st.session_state.moving_average_window = DEFAULT_MOVING_AVERAGE_WINDOW
 
 
 def load_data():
@@ -253,6 +257,24 @@ def setup_sidebar():
 
             # Global Scale Control
         st.header("📏 Plot Settings")
+
+        ma_label = next(
+            (
+                label
+                for label, months in MOVING_AVERAGE_WINDOW_OPTIONS.items()
+                if months == st.session_state.moving_average_window
+            ),
+            "12 months",
+        )
+        selected_ma_label = st.selectbox(
+            "Moving average window",
+            options=list(MOVING_AVERAGE_WINDOW_OPTIONS.keys()),
+            index=list(MOVING_AVERAGE_WINDOW_OPTIONS.keys()).index(ma_label),
+            help="Lookback for the moving average line on plots. Does not affect the 12-month forecast trend.",
+        )
+        st.session_state.moving_average_window = MOVING_AVERAGE_WINDOW_OPTIONS[
+            selected_ma_label
+        ]
 
         global_scale_enabled = st.checkbox(
             "Global Scale",

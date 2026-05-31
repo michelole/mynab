@@ -9,6 +9,7 @@ from mynab.utils import (
     create_unified_plot,
     calculate_global_y_range,
     format_currency,
+    get_moving_average_window,
 )
 
 # Page configuration
@@ -203,6 +204,24 @@ def main():
         )
     )
 
+    ma_window = get_moving_average_window()
+    last_ma_avg = 0
+    if isinstance(transactions_df, pd.DataFrame) and not transactions_df.empty:
+        tx = transactions_df.copy()
+        tx = tx[
+            (tx["category_group"].isin(selected_category_groups))
+            & (tx["category"].isin(selected_categories))
+        ]
+        if not tx.empty:
+            tx["date"] = pd.to_datetime(tx["date"])
+            tx["month"] = tx["date"].dt.to_period("M")
+            monthly_totals_full = tx.groupby("month")["amount"].sum().sort_index()
+            last_ma_avg = (
+                abs(monthly_totals_full.tail(ma_window).mean())
+                if len(monthly_totals_full) > 0
+                else 0
+            )
+
     # Display summary metrics at the top
     st.header("📊 Summary Metrics")
 
@@ -233,6 +252,12 @@ def main():
             delta=delta_text_12m,
             delta_color=delta_color_12m,
             help="Average monthly expenses over the last 12 months",
+        )
+
+        st.metric(
+            label=f"📊 Last {ma_window} Months Average",
+            value=format_currency(last_ma_avg),
+            help=f"Average monthly expenses over the last {ma_window} months (plot moving average window)",
         )
 
     with col2:

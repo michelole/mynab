@@ -10,8 +10,6 @@ from ynab.api.categories_api import CategoriesApi
 from ynab.api.transactions_api import TransactionsApi
 from ynab.api.months_api import MonthsApi
 from dotenv import load_dotenv
-import requests
-import json
 
 # Load environment variables
 load_dotenv()
@@ -74,7 +72,10 @@ def get_ynab_data(access_token):
             # Get accounts
             accounts_response = budgets_api.get_budget_by_id(budget_id)
             accounts_list = []
-            if hasattr(accounts_response.data.budget, "accounts"):
+            if (
+                hasattr(accounts_response.data.budget, "accounts")
+                and accounts_response.data.budget.accounts
+            ):
                 for acc in accounts_response.data.budget.accounts:
                     accounts_list.append(
                         {
@@ -310,6 +311,34 @@ def process_months_data(months_response, categories_data):
 
     df = pd.DataFrame(budget_data)
     return df
+
+
+MOVING_AVERAGE_WINDOW_OPTIONS = {
+    "3 months": 3,
+    "6 months": 6,
+    "12 months": 12,
+    "24 months": 24,
+}
+DEFAULT_MOVING_AVERAGE_WINDOW = 12
+
+
+def get_moving_average_window():
+    """Moving average lookback from sidebar (plots only; forecast trend unchanged)."""
+    window = st.session_state.get(
+        "moving_average_window", DEFAULT_MOVING_AVERAGE_WINDOW
+    )
+    if window not in MOVING_AVERAGE_WINDOW_OPTIONS.values():
+        return DEFAULT_MOVING_AVERAGE_WINDOW
+    return window
+
+
+def moving_average_label(months):
+    return f"{months}-Month Moving Average"
+
+
+def map_moving_average_to_months(ma_series, months_to_plot):
+    ma_map = {str(p): v for p, v in zip(ma_series.index, ma_series.values)}
+    return [ma_map.get(m, None) for m in months_to_plot]
 
 
 def calculate_moving_average(data, window=12):
@@ -794,6 +823,16 @@ def create_unified_plot(
             delta_color=delta_color_12m,
         )
 
+    ma_window = get_moving_average_window()
+    if plot_type == "category_group":
+        last_ma_avg = calculate_category_group_averages(
+            name, transactions_df, ma_window
+        )
+    else:
+        last_ma_avg = calculate_category_averages(
+            name, transactions_df, ma_window, global_month_range
+        )
+
     with col4:
         # Calculate suggested budget: -(available_budget - (avg_12_months*12))/12
         suggested_budget = -(available_budget - (avg_12_months * 12)) / 12
@@ -813,6 +852,12 @@ def create_unified_plot(
             delta=delta_text,
             delta_color=delta_color,
         )
+
+    st.metric(
+        label=f"📊 Last {ma_window} Months Avg",
+        value=format_currency(last_ma_avg),
+        help=f"Average monthly expenses over the last {ma_window} months (plot moving average window)",
+    )
 
     # Aggregate transactions by month
     filtered_transactions["date"] = pd.to_datetime(filtered_transactions["date"])
@@ -868,27 +913,52 @@ def create_unified_plot(
             )
         )
 
-        # Moving average line (if we have enough data) - flipped to positive side
+        # Moving average using full history - flipped to positive side
+        ma_window = get_moving_average_window()
+        ma_label = moving_average_label(ma_window)
         if len(complete_monthly_data) >= 3:
-            # Use all months (including 0 expenses) for calculations
-            moving_avg = calculate_moving_average(abs(complete_monthly_data["amount"]))
+            # Build full-history monthly series for this entity
+            full_transactions = st.session_state.get("transactions_df")
+            full_month_series = None
+            if (
+                isinstance(full_transactions, pd.DataFrame)
+                and not full_transactions.empty
+            ):
+                ft = full_transactions.copy()
+                ft["date"] = pd.to_datetime(ft["date"])
+                ft["month"] = ft["date"].dt.to_period("M")
+                if plot_type == "category_group":
+                    ft = ft[ft["category_group"] == name]
+                else:
+                    ft = ft[ft["category"] == name]
+                full_month_series = ft.groupby("month")["amount"].sum().sort_index()
 
-            # Pre-format hover text for moving average
-            moving_avg_hover = [format_currency(val) for val in moving_avg]
-
-            fig.add_trace(
-                go.Scatter(
-                    x=complete_monthly_data["month"],
-                    y=moving_avg,
-                    name="12-Month Moving Average",
-                    line=dict(color="#1f77b4", width=2, dash="dash"),
-                    mode="lines",
-                    hovertemplate="<b>%{x}</b><br>"
-                    + "12-Month Moving Average: %{customdata}<br>"
-                    + "<extra></extra>",
-                    customdata=moving_avg_hover,
+            if full_month_series is not None and len(full_month_series) > 0:
+                full_month_index = pd.period_range(
+                    start=full_month_series.index.min(),
+                    end=full_month_series.index.max(),
+                    freq="M",
                 )
-            )
+                full_series = full_month_series.reindex(full_month_index, fill_value=0)
+                full_series_abs = abs(full_series)
+                ma_full = calculate_moving_average(full_series_abs, window=ma_window)
+                months_to_plot = complete_monthly_data["month"].tolist()
+                ma_plot = map_moving_average_to_months(ma_full, months_to_plot)
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=months_to_plot,
+                        y=ma_plot,
+                        name=ma_label,
+                        line=dict(color="#1f77b4", width=2, dash="dash"),
+                        mode="lines",
+                        hovertemplate=f"<b>%{{x}}</b><br>{ma_label}: %{{customdata}}<br><extra></extra>",
+                        customdata=[
+                            format_currency(v) if v is not None else "€0"
+                            for v in ma_plot
+                        ],
+                    )
+                )
 
             # Forecast trend line - flipped to positive side
             trend_line, forecast = calculate_forecast_trend(

@@ -10,6 +10,8 @@ from mynab.utils import (
     create_unified_plot,
     calculate_global_y_range,
     format_currency,
+    get_moving_average_window,
+    moving_average_label,
 )
 
 # Page configuration
@@ -165,7 +167,11 @@ def create_comprehensive_plot(
             if data_type == "total_expense":
                 data_for_calculation = abs(actual_data["amount"])
 
-            moving_avg = calculate_moving_average(data_for_calculation)
+            ma_window = get_moving_average_window()
+            ma_label = moving_average_label(ma_window)
+            moving_avg = calculate_moving_average(
+                data_for_calculation, window=ma_window
+            )
 
             # Pre-format hover text for moving average
             moving_avg_hover = [format_currency(val) for val in moving_avg]
@@ -174,11 +180,11 @@ def create_comprehensive_plot(
                 go.Scatter(
                     x=actual_data["month"],
                     y=moving_avg,
-                    name="12-Month Moving Average",
+                    name=ma_label,
                     line=dict(color="#1f77b4", width=2, dash="dash"),
                     mode="lines",
                     hovertemplate="<b>%{x}</b><br>"
-                    + "12-Month Moving Average: %{customdata}<br>"
+                    + f"{ma_label}: %{{customdata}}<br>"
                     + "<extra></extra>",
                     customdata=moving_avg_hover,
                 )

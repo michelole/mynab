@@ -7,6 +7,9 @@ from mynab.utils import (
     calculate_moving_average,
     calculate_forecast_trend,
     format_currency,
+    get_moving_average_window,
+    moving_average_label,
+    map_moving_average_to_months,
 )
 
 # Page configuration
@@ -75,6 +78,8 @@ def create_account_plot(account_name, account_df, global_month_range):
 
     # Calculate 12-month average (positive for display)
     avg_12_months = abs(complete_monthly_data["net_worth"].tail(12).mean())
+    ma_window = get_moving_average_window()
+    metric_ma_avg = abs(complete_monthly_data["net_worth"].tail(ma_window).mean())
 
     # Calculate current available (net worth at last month)
     available = complete_monthly_data["net_worth"].iloc[-1]
@@ -84,7 +89,35 @@ def create_account_plot(account_name, account_df, global_month_range):
         actual_data_mask = complete_monthly_data["net_worth"] != 0
         actual_data = complete_monthly_data[actual_data_mask].copy()
         if len(actual_data) >= 3:
-            moving_avg = calculate_moving_average(abs(actual_data["net_worth"]))
+            # Use full history for MA calculations based on all transactions for this account
+            full_series = None
+            tx_full = st.session_state.get("transactions_df")
+            if isinstance(tx_full, pd.DataFrame) and not tx_full.empty:
+                txf = tx_full.copy()
+                txf = txf[txf["account_name"] == account_name]
+                txf["date"] = pd.to_datetime(txf["date"])
+                txf["month"] = txf["date"].dt.to_period("M")
+                monthly_amt_full = txf.groupby("month")["amount"].sum().sort_index()
+                # Build continuous months and cumulative net worth
+                if len(monthly_amt_full) > 0:
+                    full_index = pd.period_range(
+                        start=monthly_amt_full.index.min(),
+                        end=monthly_amt_full.index.max(),
+                        freq="M",
+                    )
+                    monthly_amt_full = monthly_amt_full.reindex(
+                        full_index, fill_value=0
+                    )
+                    net_worth_full = monthly_amt_full.cumsum()
+                    full_series = abs(net_worth_full)
+            if full_series is None:
+                full_series = abs(complete_monthly_data["net_worth"]).copy()
+            ma_series = calculate_moving_average(full_series, window=ma_window)
+            try:
+                if full_series is not None and len(full_series) > 0:
+                    metric_ma_avg = abs(full_series.tail(ma_window).mean())
+            except Exception:
+                pass
             trend_line, forecast = calculate_forecast_trend(
                 abs(actual_data["net_worth"])
             )
@@ -95,12 +128,12 @@ def create_account_plot(account_name, account_df, global_month_range):
                 freq="MS",
             )
         else:
-            moving_avg = None
+            ma_series = None
             trend_line = None
             forecast = None
             future_months = None
     else:
-        moving_avg = None
+        ma_series = None
         trend_line = None
         forecast = None
         future_months = None
@@ -121,17 +154,21 @@ def create_account_plot(account_name, account_df, global_month_range):
             ],
         )
     )
-    # Line: 12-month moving average
-    if moving_avg is not None:
+    if ma_series is not None:
+        months_to_plot = complete_monthly_data["month"].tolist()
+        ma_plot = map_moving_average_to_months(ma_series, months_to_plot)
+        ma_label = moving_average_label(ma_window)
         fig.add_trace(
             go.Scatter(
-                x=actual_data["month"],
-                y=moving_avg,
-                name="12-Month Moving Avg",
-                line=dict(color="#ff7f0e", width=2, dash="dash"),
+                x=months_to_plot,
+                y=ma_plot,
+                name=ma_label,
+                line=dict(color="#1f77b4", width=2, dash="dash"),
                 mode="lines",
-                hovertemplate="<b>%{x}</b><br>12-Month Moving Avg: %{customdata}<br><extra></extra>",
-                customdata=[format_currency(val) for val in moving_avg],
+                hovertemplate=f"<b>%{{x}}</b><br>{ma_label}: %{{customdata}}<br><extra></extra>",
+                customdata=[
+                    format_currency(v) if v is not None else "€0" for v in ma_plot
+                ],
             )
         )
     # Line: forecast trend
@@ -169,7 +206,7 @@ def create_account_plot(account_name, account_df, global_month_range):
         yaxis_title="Net Worth (€)",
         barmode="overlay",
     )
-    return fig, available, avg_12_months
+    return fig, available, avg_12_months, metric_ma_avg, ma_window
 
 
 def main():
@@ -192,9 +229,7 @@ def main():
         return
 
     # Build account_id -> type and name mapping
-    account_info = {
-        acc["id"]: {"type": acc["type"], "name": acc["name"]} for acc in accounts_list
-    }
+    # account_info mapping not used directly; keep minimal
 
     # Filter out credit accounts
     non_credit_accounts = [
@@ -241,15 +276,21 @@ def main():
                         account_df = filtered_transactions_df[
                             filtered_transactions_df["account_id"] == account_id
                         ]
-                        fig, available, avg_12_months = create_account_plot(
-                            account_name, account_df, global_month_range
+                        fig, available, avg_12_months, metric_ma_avg, ma_window = (
+                            create_account_plot(
+                                account_name, account_df, global_month_range
+                            )
                         )
-                        # Metrics
-                        mcol1, mcol2 = st.columns(2)
+                        mcol1, mcol2, mcol3 = st.columns(3)
                         with mcol1:
                             st.metric("Available (Sum)", format_currency(available))
                         with mcol2:
                             st.metric("12-Months Avg", format_currency(avg_12_months))
+                        with mcol3:
+                            st.metric(
+                                f"{ma_window}-Months Avg",
+                                format_currency(metric_ma_avg),
+                            )
                         if fig:
                             st.plotly_chart(fig, use_container_width=True)
                         else:
