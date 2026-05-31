@@ -375,10 +375,46 @@ def build_entity_monthly_series(
     return abs(series) if abs_values else series
 
 
+def filter_overview_transactions_for_ma(transactions_df=None):
+    """Full history with overview sidebar category filters (no date filter)."""
+    if transactions_df is None:
+        transactions_df = st.session_state.get("transactions_df")
+    if not isinstance(transactions_df, pd.DataFrame) or transactions_df.empty:
+        return transactions_df
+
+    excluded_groups = get_excluded_groups()
+    df = transactions_df[
+        ~transactions_df["category_group"].isin(excluded_groups)
+    ].copy()
+
+    selected_category_groups = st.session_state.get("selected_category_groups", [])
+    if not selected_category_groups:
+        category_groups = st.session_state.get("category_groups", {})
+        selected_category_groups = sorted(
+            group
+            for group in category_groups.keys()
+            if group not in excluded_groups
+        )
+
+    selected_categories = st.session_state.get("selected_categories", [])
+
+    income_transactions = df[
+        (df["category"] == "Inflow: Ready to Assign")
+        & (df["payee_name"] != "Starting Balance")
+    ].copy()
+    expense_transactions = df[
+        (df["category_group"].isin(selected_category_groups))
+        & (df["category"].isin(selected_categories))
+        & (df["category"] != "Inflow: Ready to Assign")
+    ].copy()
+
+    return pd.concat([income_transactions, expense_transactions], ignore_index=True)
+
+
 def build_overview_monthly_series(data_type, transactions_df=None):
     """Monthly totals from full history for overview moving averages."""
     if transactions_df is None:
-        transactions_df = st.session_state.get("transactions_df")
+        transactions_df = filter_overview_transactions_for_ma()
     if not isinstance(transactions_df, pd.DataFrame) or transactions_df.empty:
         return None
 
