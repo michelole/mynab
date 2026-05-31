@@ -703,7 +703,7 @@ def get_default_month_range():
     """Default display range: last 12 calendar months (first-of-month for each bound)."""
     today = date.today()
 
-    if today.day >= 20:
+    if today.day >= 15:
         default_end_month = month_start(today)
     else:
         first_day_current_month = date(today.year, today.month, 1)
