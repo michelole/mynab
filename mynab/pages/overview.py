@@ -609,7 +609,7 @@ for i in range(0, len(selected_category_groups), cols_per_row):
                     group_name,
                     filtered_transactions_df,
                     budget_df,
-                    filtered_month_range,  # <-- use filtered_month_range here
+                    global_month_range,
                     categories_data,
                     category_group_y_range,
                 )
