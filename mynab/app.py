@@ -1,5 +1,4 @@
 import streamlit as st
-import pandas as pd
 import os
 
 from mynab.utils import (
@@ -57,30 +56,23 @@ st.markdown(
 
 def initialize_session_state():
     """Initialize session state variables"""
-    if "data_loaded" not in st.session_state:
-        st.session_state.data_loaded = False
-    if "start_date" not in st.session_state:
-        st.session_state.start_date = None
-    if "end_date" not in st.session_state:
-        st.session_state.end_date = None
-    if "selected_category_groups" not in st.session_state:
-        st.session_state.selected_category_groups = []
-    if "selected_categories" not in st.session_state:
-        st.session_state.selected_categories = []
-    if "transactions_df" not in st.session_state:
-        st.session_state.transactions_df = None
-    if "budget_df" not in st.session_state:
-        st.session_state.budget_df = None
-    if "categories_data" not in st.session_state:
-        st.session_state.categories_data = None
-    if "category_groups" not in st.session_state:
-        st.session_state.category_groups = None
-    if "global_scale_enabled" not in st.session_state:
-        st.session_state.global_scale_enabled = True
-    if "moving_average_window" not in st.session_state:
-        st.session_state.moving_average_window = DEFAULT_MOVING_AVERAGE_WINDOW
-    if "month_range_preset" not in st.session_state:
-        st.session_state.month_range_preset = DEFAULT_MONTH_RANGE_PRESET
+    defaults = {
+        "data_loaded": False,
+        "start_date": None,
+        "end_date": None,
+        "selected_category_groups": [],
+        "selected_categories": [],
+        "transactions_df": None,
+        "budget_df": None,
+        "categories_data": None,
+        "category_groups": None,
+        "global_scale_enabled": True,
+        "moving_average_window": DEFAULT_MOVING_AVERAGE_WINDOW,
+        "month_range_preset": DEFAULT_MONTH_RANGE_PRESET,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
 def load_data():
@@ -134,181 +126,185 @@ def load_data():
     return True
 
 
+def _setup_month_range_section():
+    """Setup month range selection in sidebar"""
+    st.header("📅 Month Range")
+
+    available_months = list_available_months(st.session_state.transactions_df)
+    preset_labels = MONTH_RANGE_PRESET_OPTIONS
+    current_preset = st.session_state.month_range_preset
+    if current_preset not in preset_labels:
+        current_preset = DEFAULT_MONTH_RANGE_PRESET
+
+    preset = st.selectbox(
+        "Time range",
+        preset_labels,
+        index=preset_labels.index(current_preset),
+        help="Quick range presets; choose Custom to pick start and end months",
+    )
+    st.session_state.month_range_preset = preset
+
+    if preset != "Custom":
+        start_month, end_month = resolve_month_range_preset(
+            preset, available_months
+        )
+        start_date, end_date = dates_from_month_selection(start_month, end_month)
+        st.session_state.start_date = start_date
+        st.session_state.end_date = end_date
+        return True
+
+    month_labels = [format_month_option(m) for m in available_months]
+    label_to_month = dict(zip(month_labels, available_months))
+
+    default_start_month, default_end_month = get_default_month_range()
+    if available_months:
+        default_start_month = max(default_start_month, available_months[0])
+        default_end_month = min(default_end_month, available_months[-1])
+
+    if st.session_state.start_date and st.session_state.end_date:
+        current_start_month = month_start(st.session_state.start_date)
+        current_end_month = month_start(st.session_state.end_date)
+    else:
+        current_start_month = default_start_month
+        current_end_month = default_end_month
+
+    def _month_index(month, fallback):
+        return (
+            available_months.index(month)
+            if month in available_months
+            else available_months.index(fallback)
+        )
+
+    start_label = st.selectbox(
+        "Start month",
+        month_labels,
+        index=_month_index(current_start_month, default_start_month),
+        help="First month included in charts and totals",
+    )
+    end_label = st.selectbox(
+        "End month",
+        month_labels,
+        index=_month_index(current_end_month, default_end_month),
+        help="Last month included in charts and totals",
+    )
+
+    start_month = label_to_month[start_label]
+    end_month = label_to_month[end_label]
+
+    if start_month > end_month:
+        st.error("Start month must be before or equal to end month!")
+        return False
+
+    start_date, end_date = dates_from_month_selection(start_month, end_month)
+    st.session_state.start_date = start_date
+    st.session_state.end_date = end_date
+    return True
+
+
+def _setup_plot_settings_section():
+    """Setup plot settings in sidebar"""
+    st.header("📏 Plot Settings")
+
+    ma_label = next(
+        (
+            label
+            for label, months in MOVING_AVERAGE_WINDOW_OPTIONS.items()
+            if months == st.session_state.moving_average_window
+        ),
+        "12 months (weighted)",
+    )
+    selected_ma_label = st.selectbox(
+        "Moving average window",
+        options=list(MOVING_AVERAGE_WINDOW_OPTIONS.keys()),
+        index=list(MOVING_AVERAGE_WINDOW_OPTIONS.keys()).index(ma_label),
+        help="Lookback for the moving average line on plots. Does not affect the 12-month forecast trend.",
+    )
+    st.session_state.moving_average_window = MOVING_AVERAGE_WINDOW_OPTIONS[
+        selected_ma_label
+    ]
+
+    global_scale_enabled = st.checkbox(
+        "Global Scale",
+        value=st.session_state.global_scale_enabled,
+        help="When enabled, all plots in a section will share the same y-axis scale for better comparison.",
+    )
+    st.session_state.global_scale_enabled = global_scale_enabled
+
+
+def _setup_category_filters_section():
+    """Setup category group and category filters in sidebar"""
+    st.header("📊 Category Groups")
+
+    if st.session_state.category_groups is None:
+        return
+
+    excluded_groups = get_excluded_groups()
+    category_group_names = sorted(
+        [
+            group
+            for group in st.session_state.category_groups.keys()
+            if group not in excluded_groups
+        ]
+    )
+
+    default_groups = get_default_category_groups()
+    available_defaults = [
+        group for group in default_groups if group in category_group_names
+    ]
+
+    selected_category_groups = st.multiselect(
+        "Select category groups to include:",
+        options=category_group_names,
+        default=st.session_state.selected_category_groups or available_defaults,
+        help="Choose which category groups to include in the analysis. Leave empty to show all groups.",
+    )
+
+    if not selected_category_groups:
+        selected_category_groups = category_group_names
+
+    st.session_state.selected_category_groups = selected_category_groups
+
+    st.header("📋 Categories")
+
+    available_categories = []
+    for group_name in selected_category_groups:
+        if group_name in st.session_state.category_groups:
+            for category in st.session_state.category_groups[group_name]:
+                available_categories.append(category["name"])
+
+    available_categories = sorted(available_categories)
+
+    default_categories = get_default_categories()
+    available_default_categories = [
+        cat for cat in default_categories if cat in available_categories
+    ]
+
+    current_selected_categories = [
+        cat
+        for cat in st.session_state.selected_categories
+        if cat in available_categories
+    ]
+
+    selected_categories = st.multiselect(
+        "Select categories to include:",
+        options=available_categories,
+        default=current_selected_categories or available_default_categories,
+        help="Choose which categories to include in the analysis. Leave empty to show all categories from selected groups.",
+    )
+
+    if not selected_categories:
+        selected_categories = available_categories
+
+    st.session_state.selected_categories = selected_categories
+
+
 def setup_sidebar():
     """Setup sidebar with filters"""
     with st.sidebar:
-        st.header("📅 Month Range")
-
-        available_months = list_available_months(st.session_state.transactions_df)
-        preset_labels = MONTH_RANGE_PRESET_OPTIONS
-        current_preset = st.session_state.month_range_preset
-        if current_preset not in preset_labels:
-            current_preset = DEFAULT_MONTH_RANGE_PRESET
-
-        preset = st.selectbox(
-            "Time range",
-            preset_labels,
-            index=preset_labels.index(current_preset),
-            help="Quick range presets; choose Custom to pick start and end months",
-        )
-        st.session_state.month_range_preset = preset
-
-        if preset != "Custom":
-            start_month, end_month = resolve_month_range_preset(
-                preset, available_months
-            )
-            start_date, end_date = dates_from_month_selection(start_month, end_month)
-            st.session_state.start_date = start_date
-            st.session_state.end_date = end_date
-        else:
-            month_labels = [format_month_option(m) for m in available_months]
-            label_to_month = dict(zip(month_labels, available_months))
-
-            default_start_month, default_end_month = get_default_month_range()
-            if available_months:
-                default_start_month = max(default_start_month, available_months[0])
-                default_end_month = min(default_end_month, available_months[-1])
-
-            if st.session_state.start_date and st.session_state.end_date:
-                current_start_month = month_start(st.session_state.start_date)
-                current_end_month = month_start(st.session_state.end_date)
-            else:
-                current_start_month = default_start_month
-                current_end_month = default_end_month
-
-            def _month_index(month, fallback):
-                return (
-                    available_months.index(month)
-                    if month in available_months
-                    else available_months.index(fallback)
-                )
-
-            start_label = st.selectbox(
-                "Start month",
-                month_labels,
-                index=_month_index(current_start_month, default_start_month),
-                help="First month included in charts and totals",
-            )
-            end_label = st.selectbox(
-                "End month",
-                month_labels,
-                index=_month_index(current_end_month, default_end_month),
-                help="Last month included in charts and totals",
-            )
-
-            start_month = label_to_month[start_label]
-            end_month = label_to_month[end_label]
-
-            if start_month > end_month:
-                st.error("Start month must be before or equal to end month!")
-                return False
-
-            start_date, end_date = dates_from_month_selection(start_month, end_month)
-            st.session_state.start_date = start_date
-            st.session_state.end_date = end_date
-
-        st.header("📏 Plot Settings")
-
-        ma_label = next(
-            (
-                label
-                for label, months in MOVING_AVERAGE_WINDOW_OPTIONS.items()
-                if months == st.session_state.moving_average_window
-            ),
-            "12 months (weighted)",
-        )
-        selected_ma_label = st.selectbox(
-            "Moving average window",
-            options=list(MOVING_AVERAGE_WINDOW_OPTIONS.keys()),
-            index=list(MOVING_AVERAGE_WINDOW_OPTIONS.keys()).index(ma_label),
-            help="Lookback for the moving average line on plots. Does not affect the 12-month forecast trend.",
-        )
-        st.session_state.moving_average_window = MOVING_AVERAGE_WINDOW_OPTIONS[
-            selected_ma_label
-        ]
-
-        global_scale_enabled = st.checkbox(
-            "Global Scale",
-            value=st.session_state.global_scale_enabled,
-            help="When enabled, all plots in a section will share the same y-axis scale for better comparison.",
-        )
-        st.session_state.global_scale_enabled = global_scale_enabled
-
-        # Category Group Filter in sidebar
-        st.header("📊 Category Groups")
-
-        if st.session_state.category_groups is not None:
-            # Get all category group names (excluding the specified groups)
-            excluded_groups = get_excluded_groups()
-            category_group_names = sorted(
-                [
-                    group
-                    for group in st.session_state.category_groups.keys()
-                    if group not in excluded_groups
-                ]
-            )
-
-            # Set default values for multiselect
-            default_groups = get_default_category_groups()
-            # Filter default groups to only include those that exist in the data
-            available_defaults = [
-                group for group in default_groups if group in category_group_names
-            ]
-
-            selected_category_groups = st.multiselect(
-                "Select category groups to include:",
-                options=category_group_names,
-                default=st.session_state.selected_category_groups or available_defaults,
-                help="Choose which category groups to include in the analysis. Leave empty to show all groups.",
-            )
-
-            # If no groups are selected, show all groups
-            if not selected_category_groups:
-                selected_category_groups = category_group_names
-
-            # Store in session state
-            st.session_state.selected_category_groups = selected_category_groups
-
-            # Category Filter in sidebar
-            st.header("📋 Categories")
-
-            # Get categories from selected category groups
-            available_categories = []
-            for group_name in selected_category_groups:
-                if group_name in st.session_state.category_groups:
-                    for category in st.session_state.category_groups[group_name]:
-                        available_categories.append(category["name"])
-
-            # Sort categories alphabetically
-            available_categories = sorted(available_categories)
-
-            # Set default values for category multiselect
-            default_categories = get_default_categories()
-            # Filter default categories to only include those that exist in the available categories
-            available_default_categories = [
-                cat for cat in default_categories if cat in available_categories
-            ]
-
-            # Filter current selected categories to only include those that are still available
-            current_selected_categories = [
-                cat
-                for cat in st.session_state.selected_categories
-                if cat in available_categories
-            ]
-
-            selected_categories = st.multiselect(
-                "Select categories to include:",
-                options=available_categories,
-                default=current_selected_categories or available_default_categories,
-                help="Choose which categories to include in the analysis. Leave empty to show all categories from selected groups.",
-            )
-
-            # If no categories are selected, show all categories from selected groups
-            if not selected_categories:
-                selected_categories = available_categories
-
-            # Store in session state
-            st.session_state.selected_categories = selected_categories
+        if not _setup_month_range_section():
+            return False
+        _setup_plot_settings_section()
+        _setup_category_filters_section()
 
     return True
 

@@ -147,107 +147,117 @@ def process_categories_data(categories_response):
     return categories_data, category_groups
 
 
+def _find_category_group(category_id, categories_data):
+    """Find category group name for a given category ID"""
+    if not category_id:
+        return ""
+    for cat in categories_data:
+        if cat["id"] == category_id:
+            return cat["group"]
+    return ""
+
+
+def _get_transaction_date(transaction):
+    """Extract transaction date from YNAB transaction object"""
+    if hasattr(transaction, "var_date"):
+        return transaction.var_date
+    if hasattr(transaction, "date"):
+        return transaction.date
+    return None
+
+
+def _build_subtransaction_record(
+    subtransaction, transaction, transaction_date, account_id, account_name, categories_data
+):
+    """Build a dictionary record for a split subtransaction"""
+    category_group = _find_category_group(subtransaction.category_id, categories_data)
+    return {
+        "date": transaction_date,
+        "amount": subtransaction.amount / 1000,
+        "category": subtransaction.category_name or "",
+        "category_group": category_group,
+        "payee_name": transaction.payee_name or "",
+        "memo": subtransaction.memo or transaction.memo or "",
+        "transaction_id": transaction.id,
+        "account_id": account_id,
+        "account_name": account_name,
+        "import_payee_name": getattr(
+            subtransaction,
+            "import_payee_name",
+            getattr(transaction, "import_payee_name", ""),
+        ),
+        "import_payee_name_original": getattr(
+            subtransaction,
+            "import_payee_name_original",
+            getattr(transaction, "import_payee_name_original", ""),
+        ),
+    }
+
+
+def _build_transaction_record(
+    transaction, transaction_date, account_id, account_name, categories_data
+):
+    """Build a dictionary record for a regular non-split transaction"""
+    category_group = _find_category_group(transaction.category_id, categories_data)
+    return {
+        "date": transaction_date,
+        "amount": transaction.amount / 1000,
+        "category": transaction.category_name or "",
+        "category_group": category_group,
+        "payee_name": transaction.payee_name or "",
+        "memo": transaction.memo or "",
+        "transaction_id": transaction.id,
+        "account_id": account_id,
+        "account_name": account_name,
+        "import_payee_name": getattr(transaction, "import_payee_name", ""),
+        "import_payee_name_original": getattr(
+            transaction, "import_payee_name_original", ""
+        ),
+    }
+
+
 def process_transactions_data(transactions_response, categories_data):
     """Process transactions data into a structured format, handling split transactions"""
     transactions = []
 
     for transaction in transactions_response.data.transactions:
-        # Skip zero amount transactions
         if transaction.amount == 0:
             continue
 
-        # Get the date
-        transaction_date = None
-        if hasattr(transaction, "var_date"):
-            transaction_date = transaction.var_date
-        elif hasattr(transaction, "date"):
-            transaction_date = transaction.date
-        else:
-            # Skip transactions without a date
+        transaction_date = _get_transaction_date(transaction)
+        if transaction_date is None:
             continue
 
-        # Get account info
         account_id = getattr(transaction, "account_id", None)
         account_name = getattr(transaction, "account_name", None)
+        subtransactions = getattr(transaction, "subtransactions", None)
 
-        # Check if this transaction has subtransactions (split transaction)
-        has_subtransactions = (
-            hasattr(transaction, "subtransactions") and transaction.subtransactions
-        )
-
-        if has_subtransactions:
-            # Process each subtransaction
-            for subtransaction in transaction.subtransactions:
-                if subtransaction.amount == 0:
-                    continue
-
-                # Find category name and group for subtransaction
-                category_name = subtransaction.category_name or ""
-                category_group = ""
-
-                if subtransaction.category_id:
-                    for cat in categories_data:
-                        if cat["id"] == subtransaction.category_id:
-                            category_group = cat["group"]
-                            break
-
-                transactions.append(
-                    {
-                        "date": transaction_date,
-                        "amount": subtransaction.amount
-                        / 1000,  # Convert from millidollars
-                        "category": category_name,
-                        "category_group": category_group,
-                        "payee_name": transaction.payee_name or "",
-                        "memo": subtransaction.memo or transaction.memo or "",
-                        "transaction_id": transaction.id,
-                        "account_id": account_id,
-                        "account_name": account_name,
-                        "import_payee_name": getattr(
+        if subtransactions:
+            for subtransaction in subtransactions:
+                if subtransaction.amount != 0:
+                    transactions.append(
+                        _build_subtransaction_record(
                             subtransaction,
-                            "import_payee_name",
-                            getattr(transaction, "import_payee_name", ""),
-                        ),
-                        "import_payee_name_original": getattr(
-                            subtransaction,
-                            "import_payee_name_original",
-                            getattr(transaction, "import_payee_name_original", ""),
-                        ),
-                    }
-                )
+                            transaction,
+                            transaction_date,
+                            account_id,
+                            account_name,
+                            categories_data,
+                        )
+                    )
         else:
-            # Process regular transaction (not split)
-            category_name = transaction.category_name or ""
-            category_group = ""
-
-            # Find category group from categories_data
-            if transaction.category_id:
-                for cat in categories_data:
-                    if cat["id"] == transaction.category_id:
-                        category_group = cat["group"]
-                        break
-
             transactions.append(
-                {
-                    "date": transaction_date,
-                    "amount": transaction.amount / 1000,  # Convert from millidollars
-                    "category": category_name,
-                    "category_group": category_group,
-                    "payee_name": transaction.payee_name or "",
-                    "memo": transaction.memo or "",
-                    "transaction_id": transaction.id,
-                    "account_id": account_id,
-                    "account_name": account_name,
-                    "import_payee_name": getattr(transaction, "import_payee_name", ""),
-                    "import_payee_name_original": getattr(
-                        transaction, "import_payee_name_original", ""
-                    ),
-                }
+                _build_transaction_record(
+                    transaction,
+                    transaction_date,
+                    account_id,
+                    account_name,
+                    categories_data,
+                )
             )
 
     df = pd.DataFrame(transactions)
 
-    # Convert date column to datetime if it exists
     if not df.empty and "date" in df.columns:
         df["date"] = pd.to_datetime(df["date"])
 
@@ -830,6 +840,65 @@ def get_default_categories():
     return ["Groceries", "Dining Out", "Transportation"]
 
 
+def _collect_entity_y_values(
+    transactions_df, categories_data, column_name, target_key, names
+):
+    """Collect monthly expense and target y-values for categories or category groups"""
+    y_values = []
+    for name in names:
+        filtered_transactions = transactions_df[
+            transactions_df[column_name] == name
+        ].copy()
+
+        if not filtered_transactions.empty:
+            filtered_transactions["date"] = pd.to_datetime(
+                filtered_transactions["date"]
+            )
+            filtered_transactions["month"] = filtered_transactions[
+                "date"
+            ].dt.to_period("M")
+            monthly_expenses = filtered_transactions.groupby("month")["amount"].sum()
+            y_values.extend(abs(monthly_expenses.values))
+
+            for cat in categories_data:
+                if (
+                    cat[target_key] == name
+                    and cat.get("target_amount") is not None
+                ):
+                    y_values.append(cat["target_amount"])
+    return y_values
+
+
+def _collect_overview_y_values(transactions_df):
+    """Collect monthly income and expense y-values for overview plots"""
+    y_values = []
+    income_transactions = transactions_df[
+        (transactions_df["category"] == "Inflow: Ready to Assign")
+        & (transactions_df["payee_name"] != "Starting Balance")
+    ].copy()
+
+    if not income_transactions.empty:
+        income_transactions["date"] = pd.to_datetime(income_transactions["date"])
+        income_transactions["month"] = income_transactions["date"].dt.to_period("M")
+        monthly_income = income_transactions.groupby("month")["amount"].sum()
+        y_values.extend(monthly_income.values)
+
+    expense_transactions = transactions_df[
+        (transactions_df["category_group"].astype(str) != "nan")
+        & (transactions_df["category_group"].astype(str) != "")
+    ].copy()
+
+    if not expense_transactions.empty:
+        expense_transactions["date"] = pd.to_datetime(expense_transactions["date"])
+        expense_transactions["month"] = expense_transactions["date"].dt.to_period(
+            "M"
+        )
+        monthly_expenses = expense_transactions.groupby("month")["amount"].sum()
+        y_values.extend(abs(monthly_expenses.values))
+
+    return y_values
+
+
 def calculate_global_y_range(
     transactions_df,
     budget_df,
@@ -856,177 +925,81 @@ def calculate_global_y_range(
     all_y_values = []
 
     if plot_type == "category" and category_names:
-        # Calculate for individual categories
-        for category_name in category_names:
-            filtered_transactions = transactions_df[
-                transactions_df["category"] == category_name
-            ].copy()
-
-            if not filtered_transactions.empty:
-                # Aggregate by month
-                filtered_transactions["date"] = pd.to_datetime(
-                    filtered_transactions["date"]
-                )
-                filtered_transactions["month"] = filtered_transactions[
-                    "date"
-                ].dt.to_period("M")
-                monthly_expenses = filtered_transactions.groupby("month")[
-                    "amount"
-                ].sum()
-
-                # Add to all values
-                all_y_values.extend(abs(monthly_expenses.values))
-
-                # Add target amount if available
-                for cat in categories_data:
-                    if (
-                        cat["name"] == category_name
-                        and cat.get("target_amount") is not None
-                    ):
-                        all_y_values.append(cat["target_amount"])
-
+        all_y_values = _collect_entity_y_values(
+            transactions_df, categories_data, "category", "name", category_names
+        )
     elif plot_type == "category_group" and category_names:
-        # Calculate for category groups
-        for group_name in category_names:
-            filtered_transactions = transactions_df[
-                transactions_df["category_group"] == group_name
-            ].copy()
-
-            if not filtered_transactions.empty:
-                # Aggregate by month
-                filtered_transactions["date"] = pd.to_datetime(
-                    filtered_transactions["date"]
-                )
-                filtered_transactions["month"] = filtered_transactions[
-                    "date"
-                ].dt.to_period("M")
-                monthly_expenses = filtered_transactions.groupby("month")[
-                    "amount"
-                ].sum()
-
-                # Add to all values
-                all_y_values.extend(abs(monthly_expenses.values))
-
-                # Add target amounts for categories in this group
-                for cat in categories_data:
-                    if (
-                        cat["group"] == group_name
-                        and cat.get("target_amount") is not None
-                    ):
-                        all_y_values.append(cat["target_amount"])
-
+        all_y_values = _collect_entity_y_values(
+            transactions_df, categories_data, "category_group", "group", category_names
+        )
     elif plot_type == "overview":
-        # Calculate for overview plots (income, expenses, net income)
-        # Income
-        income_transactions = transactions_df[
-            (transactions_df["category"] == "Inflow: Ready to Assign")
-            & (transactions_df["payee_name"] != "Starting Balance")
-        ].copy()
+        all_y_values = _collect_overview_y_values(transactions_df)
 
-        if not income_transactions.empty:
-            income_transactions["date"] = pd.to_datetime(income_transactions["date"])
-            income_transactions["month"] = income_transactions["date"].dt.to_period("M")
-            monthly_income = income_transactions.groupby("month")["amount"].sum()
-            all_y_values.extend(monthly_income.values)
-
-        # Expenses
-        expense_transactions = transactions_df[
-            (transactions_df["category_group"].astype(str) != "nan")
-            & (transactions_df["category_group"].astype(str) != "")
-        ].copy()
-
-        if not expense_transactions.empty:
-            expense_transactions["date"] = pd.to_datetime(expense_transactions["date"])
-            expense_transactions["month"] = expense_transactions["date"].dt.to_period(
-                "M"
-            )
-            monthly_expenses = expense_transactions.groupby("month")["amount"].sum()
-            all_y_values.extend(abs(monthly_expenses.values))
-
-    # Calculate range with some padding
     if all_y_values:
         min_val = min(all_y_values)
         max_val = max(all_y_values)
-
-        # Add 10% padding
         padding = (max_val - min_val) * 0.1
         return [max(0, min_val - padding), max_val + padding]
 
     return None
 
 
-def create_unified_plot(
-    name,
-    transactions_df,
-    budget_df,
-    global_month_range,
-    categories_data,
-    plot_type="category",
-    y_range=None,
+def _prepare_unified_plot_data(
+    name, transactions_df, budget_df, global_month_range, categories_data, plot_type
 ):
-    """
-    Create comprehensive plot for either a category group or individual category
-
-    Args:
-        name: Category group name or category name
-        transactions_df: DataFrame of transactions
-        budget_df: DataFrame of budget data
-        global_month_range: Global month range for consistent x-axis
-        categories_data: List of category data dictionaries
-        plot_type: 'category_group' or 'category'
-    """
-    import streamlit as st
-
-    # Filter data based on plot type
+    """Filter data and calculate summary metrics for unified plot"""
     if plot_type == "category_group":
         filtered_transactions = transactions_df[
             transactions_df["category_group"] == name
         ].copy()
-
-        # Calculate total target goal for this category group
-        target_amount = 0
-        for cat in categories_data:
-            if cat["group"] == name and cat.get("target_amount") is not None:
-                target_amount += cat["target_amount"]
-
-        # Calculate average metrics
+        target_amount = sum(
+            cat["target_amount"]
+            for cat in categories_data
+            if cat["group"] == name and cat.get("target_amount") is not None
+        )
         avg_12_months = calculate_category_group_averages(name, transactions_df, 12)
-
-        # Calculate available budget for this category group
         available_budget = calculate_category_group_available_budget(name, budget_df)
-
-    else:  # plot_type == 'category'
+    else:
         filtered_transactions = transactions_df[
             transactions_df["category"] == name
         ].copy()
-
-        # Get budget data for this category
         cat_budget = pd.DataFrame()
         if not budget_df.empty and "category" in budget_df.columns:
             cat_budget = budget_df[budget_df["category"] == name].copy()
-
         if filtered_transactions.empty and cat_budget.empty:
             return None
 
-        # Find target goal for this category
-        target_amount = None
-        for cat in categories_data:
-            if cat["name"] == name and cat.get("target_amount") is not None:
-                target_amount = cat["target_amount"]
-                break
-
-        # Calculate average metrics
+        target_amount = next(
+            (
+                cat["target_amount"]
+                for cat in categories_data
+                if cat["name"] == name and cat.get("target_amount") is not None
+            ),
+            None,
+        )
         avg_12_months = calculate_category_averages(
             name, transactions_df, 12, global_month_range
         )
-
-        # Calculate available budget for this category
         available_budget = calculate_category_available_budget(name, budget_df)
 
     if filtered_transactions.empty:
         return None
 
-    # Create metrics row - First row
+    return filtered_transactions, target_amount, avg_12_months, available_budget
+
+
+def _render_unified_plot_metrics(
+    name,
+    transactions_df,
+    global_month_range,
+    plot_type,
+    target_amount,
+    avg_12_months,
+    available_budget,
+):
+    """Render Streamlit metrics for a unified category or category group plot"""
+    import streamlit as st
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -1044,16 +1017,12 @@ def create_unified_plot(
             value=format_currency(available_budget),
         )
 
-    # Create metrics row - Second row
     col3, col4 = st.columns(2)
 
     with col3:
         if target_amount is not None and target_amount > 0:
-            # Calculate delta for 12-month average as percentage
             delta_12m = avg_12_months - target_amount
-            delta_pct_12m = (
-                (delta_12m / target_amount) * 100 if target_amount > 0 else 0
-            )
+            delta_pct_12m = (delta_12m / target_amount) * 100
             delta_color_12m = "inverse"
             delta_text_12m = f"{delta_pct_12m:+.1f}%" if delta_12m != 0 else "On target"
         else:
@@ -1078,10 +1047,7 @@ def create_unified_plot(
         )
 
     with col4:
-        # Calculate suggested budget: -(available_budget - (avg_12_months*12))/12
         suggested_budget = -(available_budget - (avg_12_months * 12)) / 12
-
-        # Calculate delta as difference ratio to target budget
         if target_amount is not None and target_amount > 0:
             delta_ratio = ((suggested_budget - target_amount) / target_amount) * 100
             delta_text = f"{delta_ratio:+.1f}%"
@@ -1110,7 +1076,156 @@ def create_unified_plot(
         help=ma_metric_help,
     )
 
-    # Aggregate transactions by month
+
+def _add_unified_plot_traces(
+    fig, complete_monthly_data, plot_type, name, target_amount
+):
+    """Add bar, moving average, forecast, and target goal traces to unified plot"""
+    expense_hover = [
+        format_currency(abs(val)) for val in complete_monthly_data["amount"]
+    ]
+
+    fig.add_trace(
+        go.Bar(
+            x=complete_monthly_data["month"],
+            y=abs(complete_monthly_data["amount"]),
+            name="Actual Expenses",
+            marker_color="#ff7f0e",
+            opacity=0.8,
+            hovertemplate="<b>%{x}</b><br>"
+            + "Actual Expenses: %{customdata}<br>"
+            + "<extra></extra>",
+            customdata=expense_hover,
+        )
+    )
+
+    ma_window = get_moving_average_window()
+    ma_label = moving_average_label(ma_window)
+    months_to_plot = complete_monthly_data["month"].tolist()
+    full_series_abs = build_entity_monthly_series(
+        plot_type, name, abs_values=True
+    )
+    ma_plot = moving_average_for_plot_months(
+        full_series_abs, months_to_plot, window=ma_window
+    )
+    if ma_plot is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=months_to_plot,
+                y=ma_plot,
+                name=ma_label,
+                line=dict(color="#1f77b4", width=2, dash="dot"),
+                mode="lines",
+                hovertemplate=f"<b>%{{x}}</b><br>{ma_label}: %{{customdata}}<br><extra></extra>",
+                customdata=[
+                    format_currency(v) if v is not None else "€0"
+                    for v in ma_plot
+                ],
+            )
+        )
+
+    future_months = None
+    if len(complete_monthly_data) >= 3:
+        trend_line, forecast = calculate_forecast_trend(
+            abs(complete_monthly_data["amount"])
+        )
+        trend_line_hover = [format_currency(val) for val in trend_line]
+
+        fig.add_trace(
+            go.Scatter(
+                x=complete_monthly_data["month"],
+                y=trend_line,
+                name="12-Month Forecast Trend",
+                line=dict(color="#d62728", width=2),
+                mode="lines",
+                hovertemplate="<b>%{x}</b><br>"
+                + "12-Month Forecast Trend: %{customdata}<br>"
+                + "<extra></extra>",
+                customdata=trend_line_hover,
+            )
+        )
+
+        last_month_date = complete_monthly_data["month_date"].iloc[-1]
+        future_months = pd.date_range(
+            start=last_month_date + pd.DateOffset(months=1),
+            periods=3,
+            freq="MS",
+        )
+        forecast_hover = [format_currency(val) for val in abs(forecast)]
+
+        fig.add_trace(
+            go.Scatter(
+                x=future_months.strftime("%Y-%m"),
+                y=abs(forecast),
+                name="Forecast (Next 3 Months)",
+                line=dict(color="#d62728", width=2, dash="dash"),
+                mode="lines",
+                hovertemplate="<b>%{x}</b><br>"
+                + "Forecast: %{customdata}<br>"
+                + "<extra></extra>",
+                customdata=forecast_hover,
+            )
+        )
+
+    if target_amount is not None and target_amount > 0:
+        all_months = complete_monthly_data["month"].tolist()
+        if future_months is not None:
+            all_months.extend(future_months.strftime("%Y-%m").tolist())
+
+        target_hover = [format_currency(target_amount)] * len(all_months)
+        fig.add_trace(
+            go.Scatter(
+                x=all_months,
+                y=[target_amount] * len(all_months),
+                name=f"Target Goal ({format_currency(target_amount)})",
+                line=dict(color="#2ca02c", width=3, dash="solid"),
+                mode="lines",
+                hovertemplate="<b>%{x}</b><br>"
+                + "Target Goal: %{customdata}<br>"
+                + "<extra></extra>",
+                customdata=target_hover,
+            )
+        )
+
+
+def create_unified_plot(
+    name,
+    transactions_df,
+    budget_df,
+    global_month_range,
+    categories_data,
+    plot_type="category",
+    y_range=None,
+):
+    """
+    Create comprehensive plot for either a category group or individual category
+
+    Args:
+        name: Category group name or category name
+        transactions_df: DataFrame of transactions
+        budget_df: DataFrame of budget data
+        global_month_range: Global month range for consistent x-axis
+        categories_data: List of category data dictionaries
+        plot_type: 'category_group' or 'category'
+    """
+    prepared = _prepare_unified_plot_data(
+        name, transactions_df, budget_df, global_month_range, categories_data, plot_type
+    )
+    if prepared is None:
+        return None
+
+    filtered_transactions, target_amount, avg_12_months, available_budget = prepared
+
+    _render_unified_plot_metrics(
+        name,
+        transactions_df,
+        global_month_range,
+        plot_type,
+        target_amount,
+        avg_12_months,
+        available_budget,
+    )
+
     filtered_transactions["date"] = pd.to_datetime(filtered_transactions["date"])
     filtered_transactions["month"] = filtered_transactions["date"].dt.to_period("M")
     monthly_expenses = (
@@ -1118,152 +1233,34 @@ def create_unified_plot(
     )
     monthly_expenses["month"] = monthly_expenses["month"].astype(str)
 
-    # Create single comprehensive plot
     fig = go.Figure()
 
     if not monthly_expenses.empty:
-        # Sort by month for proper ordering
         monthly_expenses = monthly_expenses.sort_values("month")
         monthly_expenses["month_date"] = pd.to_datetime(monthly_expenses["month"])
         monthly_expenses = monthly_expenses.sort_values("month_date")
 
-        # Use the global month range instead of specific range
         all_months_df = pd.DataFrame(
             {
                 "month_date": global_month_range,
                 "month": global_month_range.strftime("%Y-%m"),
             }
         )
-        # Only use months in the filtered period for plotting
         monthly_expenses = monthly_expenses[
             monthly_expenses["month"].isin(all_months_df["month"])
         ]
-        # Merge with actual data to include months with 0 expenses, but only for filtered period
-        complete_monthly_data = all_months_df.merge(
-            monthly_expenses[["month", "amount"]], on="month", how="left"
-        ).fillna(0)
-        complete_monthly_data = complete_monthly_data.sort_values("month_date")
-
-        # Bar chart for actual expenses (including 0 values) - flipped to positive side
-        # Pre-format hover text with currency formatting
-        expense_hover = [
-            format_currency(abs(val)) for val in complete_monthly_data["amount"]
-        ]
-
-        fig.add_trace(
-            go.Bar(
-                x=complete_monthly_data["month"],
-                y=abs(complete_monthly_data["amount"]),
-                name="Actual Expenses",
-                marker_color="#ff7f0e",
-                opacity=0.8,
-                hovertemplate="<b>%{x}</b><br>"
-                + "Actual Expenses: %{customdata}<br>"
-                + "<extra></extra>",
-                customdata=expense_hover,
+        complete_monthly_data = (
+            all_months_df.merge(
+                monthly_expenses[["month", "amount"]], on="month", how="left"
             )
+            .fillna(0)
+            .sort_values("month_date")
         )
 
-        ma_window = get_moving_average_window()
-        ma_label = moving_average_label(ma_window)
-        months_to_plot = complete_monthly_data["month"].tolist()
-        full_series_abs = build_entity_monthly_series(
-            plot_type, name, abs_values=True
+        _add_unified_plot_traces(
+            fig, complete_monthly_data, plot_type, name, target_amount
         )
-        ma_plot = moving_average_for_plot_months(
-            full_series_abs, months_to_plot, window=ma_window
-        )
-        if ma_plot is not None:
-            fig.add_trace(
-                go.Scatter(
-                    x=months_to_plot,
-                    y=ma_plot,
-                    name=ma_label,
-                    line=dict(color="#1f77b4", width=2, dash="dot"),
-                    mode="lines",
-                    hovertemplate=f"<b>%{{x}}</b><br>{ma_label}: %{{customdata}}<br><extra></extra>",
-                    customdata=[
-                        format_currency(v) if v is not None else "€0"
-                        for v in ma_plot
-                    ],
-                )
-            )
 
-        if len(complete_monthly_data) >= 3:
-            # Forecast trend line - flipped to positive side
-            trend_line, forecast = calculate_forecast_trend(
-                abs(complete_monthly_data["amount"])
-            )
-
-            # Pre-format hover text for trend line
-            trend_line_hover = [format_currency(val) for val in trend_line]
-
-            fig.add_trace(
-                go.Scatter(
-                    x=complete_monthly_data["month"],
-                    y=trend_line,
-                    name="12-Month Forecast Trend",
-                    line=dict(color="#d62728", width=2),
-                    mode="lines",
-                    hovertemplate="<b>%{x}</b><br>"
-                    + "12-Month Forecast Trend: %{customdata}<br>"
-                    + "<extra></extra>",
-                    customdata=trend_line_hover,
-                )
-            )
-
-            # Add forecast extension - flipped to positive side
-            last_month_date = complete_monthly_data["month_date"].iloc[-1]
-            future_months = pd.date_range(
-                start=last_month_date + pd.DateOffset(months=1),
-                periods=3,
-                freq="MS",
-            )
-
-            # Pre-format hover text for forecast
-            forecast_hover = [format_currency(val) for val in abs(forecast)]
-
-            fig.add_trace(
-                go.Scatter(
-                    x=future_months.strftime("%Y-%m"),
-                    y=abs(forecast),
-                    name="Forecast (Next 3 Months)",
-                    line=dict(color="#d62728", width=2, dash="dash"),
-                    mode="lines",
-                    hovertemplate="<b>%{x}</b><br>"
-                    + "Forecast: %{customdata}<br>"
-                    + "<extra></extra>",
-                    customdata=forecast_hover,
-                )
-            )
-
-        # Add target goal line if available
-        if target_amount is not None and target_amount > 0:
-            # Create a horizontal line across all months
-            all_months = complete_monthly_data["month"].tolist()
-            if len(complete_monthly_data) >= 3 and "future_months" in locals():
-                # Include future months in the target line
-                future_month_strs = future_months.strftime("%Y-%m").tolist()
-                all_months.extend(future_month_strs)
-
-            # Pre-format hover text for target goal
-            target_hover = [format_currency(target_amount)] * len(all_months)
-
-            fig.add_trace(
-                go.Scatter(
-                    x=all_months,
-                    y=[target_amount] * len(all_months),
-                    name=f"Target Goal ({format_currency(target_amount)})",
-                    line=dict(color="#2ca02c", width=3, dash="solid"),
-                    mode="lines",
-                    hovertemplate="<b>%{x}</b><br>"
-                    + "Target Goal: %{customdata}<br>"
-                    + "<extra></extra>",
-                    customdata=target_hover,
-                )
-            )
-
-    # Update layout
     layout_update = {
         "height": 400,
         "showlegend": False,
@@ -1273,7 +1270,6 @@ def create_unified_plot(
         "barmode": "overlay",
     }
 
-    # Apply global y-axis range if provided
     if y_range is not None:
         layout_update["yaxis"] = {"range": y_range}
 

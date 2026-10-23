@@ -70,175 +70,90 @@ def create_category_plot(
     )
 
 
-def main():
-    st.markdown(
-        '<h1 class="main-header">📋 Individual Category Analysis</h1>',
-        unsafe_allow_html=True,
-    )
-
-    # Check if data is loaded in session state
-    if not st.session_state.get("data_loaded", False):
-        st.error("Data not loaded. Please go to the main page first.")
-        return
-
-    # Get data from session state
-    transactions_df = st.session_state.transactions_df
-    budget_df = st.session_state.budget_df
-    categories_data = st.session_state.categories_data
-    start_date = st.session_state.start_date
-    end_date = st.session_state.end_date
-    selected_category_groups = st.session_state.selected_category_groups
-
-    if transactions_df is None or budget_df is None or categories_data is None:
-        st.error("Data not available. Please go to the main page first.")
-        return
-
-    # Filter out transactions with excluded category groups
-    excluded_groups = get_excluded_groups()
-    filtered_transactions_df = transactions_df[
-        ~transactions_df["category_group"].isin(excluded_groups)
-    ].copy()
-
-    # Apply date filtering
-    filtered_transactions_df = filter_data_by_date_range(
-        filtered_transactions_df, start_date, end_date
-    )
-
-    # Get selected categories from session state
-    selected_categories = st.session_state.get("selected_categories", [])
-
-    # Filter categories based on selected groups and selected categories
-    filtered_categories_data = [
-        cat
+def calculate_summary_metrics(
+    categories_data, budget_df, filtered_transactions_df, global_month_range
+):
+    """Calculate summary metrics for all categories"""
+    total_target_budget = sum(
+        cat.get("target_amount", 0) or 0
         for cat in categories_data
-        if cat["group"] in selected_category_groups
-        and cat["name"] in selected_categories
-    ]
-    filtered_category_names = [cat["name"] for cat in filtered_categories_data]
-
-    # Filter transactions to only include selected category groups and categories
-    if (
-        isinstance(filtered_transactions_df, pd.DataFrame)
-        and not filtered_transactions_df.empty
-    ):
-        filtered_transactions_df = filtered_transactions_df[
-            (filtered_transactions_df["category_group"].isin(selected_category_groups))
-            & (filtered_transactions_df["category"].isin(selected_categories))
-        ].copy()
-
-    # Filter budget data to only include selected category groups and categories
-    if (
-        budget_df is not None
-        and isinstance(budget_df, pd.DataFrame)
-        and not budget_df.empty
-    ):
-        budget_df = budget_df[
-            (budget_df["category_group"].isin(selected_category_groups))
-            & (budget_df["category"].isin(selected_categories))
-        ].copy()
-
-    # Calculate global month range from filtered data
-    global_month_range, earliest_date, latest_date = get_global_month_range(
-        filtered_transactions_df, start_date, end_date
+        if cat.get("target_amount") is not None
     )
 
-    # Calculate summary metrics
-    def calculate_summary_metrics(
-        categories_data, budget_df, filtered_transactions_df, global_month_range
-    ):
-        """Calculate summary metrics for all categories"""
-        # Total target budget
-        total_target_budget = sum(
-            cat.get("target_amount", 0) or 0
-            for cat in categories_data
-            if cat.get("target_amount") is not None
-        )
+    total_available_budget = (
+        budget_df["available"].sum() if not budget_df.empty else 0
+    )
 
-        # Total available budget
-        total_available_budget = (
-            budget_df["available"].sum() if not budget_df.empty else 0
-        )
-
-        # Last 12 months average for all transactions
-        if not filtered_transactions_df.empty:
-            # Use all transactions (both income and expenses)
-            all_transactions_df = filtered_transactions_df.copy()
-            all_transactions_df["date"] = pd.to_datetime(all_transactions_df["date"])
-            all_transactions_df["month"] = all_transactions_df["date"].dt.to_period("M")
-            monthly_totals = all_transactions_df.groupby("month")["amount"].sum()
-            if len(monthly_totals) >= 12:
-                last_12_months_avg = abs(monthly_totals.tail(12).mean())
-            else:
-                last_12_months_avg = (
-                    abs(monthly_totals.mean()) if not monthly_totals.empty else 0
-                )
+    if not filtered_transactions_df.empty:
+        all_transactions_df = filtered_transactions_df.copy()
+        all_transactions_df["date"] = pd.to_datetime(all_transactions_df["date"])
+        all_transactions_df["month"] = all_transactions_df["date"].dt.to_period("M")
+        monthly_totals = all_transactions_df.groupby("month")["amount"].sum()
+        if len(monthly_totals) >= 12:
+            last_12_months_avg = abs(monthly_totals.tail(12).mean())
         else:
-            last_12_months_avg = 0
-
-        # Sum of suggested budgets
-        total_suggested_budget = 0
-        for cat in categories_data:
-            category_name = cat["name"]
-            avg_12_months = calculate_category_averages(
-                category_name, filtered_transactions_df, 12, global_month_range
+            last_12_months_avg = (
+                abs(monthly_totals.mean()) if not monthly_totals.empty else 0
             )
-            available_budget = calculate_category_available_budget(
-                category_name, budget_df
-            )
-            suggested_budget = -(available_budget - (avg_12_months * 12)) / 12
-            total_suggested_budget += suggested_budget
+    else:
+        last_12_months_avg = 0
 
-        return (
-            total_target_budget,
-            total_available_budget,
-            last_12_months_avg,
-            total_suggested_budget,
+    total_suggested_budget = 0
+    for cat in categories_data:
+        category_name = cat["name"]
+        avg_12_months = calculate_category_averages(
+            category_name, filtered_transactions_df, 12, global_month_range
         )
+        available_budget = calculate_category_available_budget(
+            category_name, budget_df
+        )
+        suggested_budget = -(available_budget - (avg_12_months * 12)) / 12
+        total_suggested_budget += suggested_budget
 
-    # Calculate summary metrics
-    total_target, total_available, last_12m_avg, total_suggested = (
-        calculate_summary_metrics(
-            filtered_categories_data,
-            budget_df,
-            filtered_transactions_df,
-            global_month_range,
-        )
+    return (
+        total_target_budget,
+        total_available_budget,
+        last_12_months_avg,
+        total_suggested_budget,
     )
 
-    ma_window = get_moving_average_window()
-    last_ma_avg = 0
-    if isinstance(transactions_df, pd.DataFrame) and not transactions_df.empty:
-        tx = transactions_df.copy()
-        tx = tx[
-            (tx["category_group"].isin(selected_category_groups))
-            & (tx["category"].isin(selected_categories))
-        ]
-        if not tx.empty:
-            tx["date"] = pd.to_datetime(tx["date"])
-            tx["month"] = tx["date"].dt.to_period("M")
-            monthly_totals_full = tx.groupby("month")["amount"].sum().sort_index()
-            last_ma_avg = calculate_series_tail_average(
-                monthly_totals_full, ma_window
-            )
 
-    # Display summary metrics at the top
+def _calculate_last_ma_avg(
+    transactions_df, selected_category_groups, selected_categories, ma_window
+):
+    """Calculate moving average tail metric across selected categories"""
+    if not isinstance(transactions_df, pd.DataFrame) or transactions_df.empty:
+        return 0
+    tx = transactions_df[
+        (transactions_df["category_group"].isin(selected_category_groups))
+        & (transactions_df["category"].isin(selected_categories))
+    ].copy()
+    if tx.empty:
+        return 0
+    tx["date"] = pd.to_datetime(tx["date"])
+    tx["month"] = tx["date"].dt.to_period("M")
+    monthly_totals_full = tx.groupby("month")["amount"].sum().sort_index()
+    return calculate_series_tail_average(monthly_totals_full, ma_window)
+
+
+def _render_summary_metrics(
+    total_target, total_available, last_12m_avg, total_suggested, last_ma_avg, ma_window
+):
+    """Display summary metrics at the top of the categories page"""
     st.header("📊 Summary Metrics")
 
-    # Create metrics in a 2x2 grid (matching individual category order)
     col1, col2 = st.columns(2)
 
     with col1:
-        # Target Budget - no delta for total target
         st.metric(
             label="🎯 Total Target Budget",
             value=format_currency(total_target),
             help="Sum of all category target budgets",
         )
 
-        # Last 12 Months Average - delta as percentage vs target
         if total_target > 0:
             delta_12m = last_12m_avg - total_target
-            delta_pct_12m = (delta_12m / total_target) * 100 if total_target > 0 else 0
+            delta_pct_12m = (delta_12m / total_target) * 100
             delta_text_12m = f"{delta_pct_12m:+.1f}%" if delta_12m != 0 else "On target"
             delta_color_12m = "inverse"
         else:
@@ -267,14 +182,12 @@ def main():
         )
 
     with col2:
-        # Available Budget - no delta
         st.metric(
             label="💰 Total Available Budget",
             value=format_currency(total_available),
             help="Sum of all category available budgets",
         )
 
-        # Suggested Budget - delta as percentage vs target
         if total_target > 0:
             delta_ratio = ((total_suggested - total_target) / total_target) * 100
             delta_text = f"{delta_ratio:+.1f}%"
@@ -291,34 +204,25 @@ def main():
             help="Sum of all category suggested budgets",
         )
 
-    # Calculate global y-axis range for categories if enabled
-    global_scale_enabled = st.session_state.get("global_scale_enabled", False)
-    category_y_range = None
-    if global_scale_enabled and filtered_category_names:
-        category_y_range = calculate_global_y_range(
-            filtered_transactions_df,
-            budget_df,
-            categories_data,
-            "category",
-            filtered_category_names,
-        )
 
-    # Group categories by category group
+def _render_category_groups(
+    filtered_categories_data,
+    filtered_transactions_df,
+    budget_df,
+    global_month_range,
+    categories_data,
+    category_y_range,
+):
+    """Group and display plots for each category group"""
     categories_by_group = {}
     for cat in filtered_categories_data:
-        group_name = cat["group"]
-        if group_name not in categories_by_group:
-            categories_by_group[group_name] = []
-        categories_by_group[group_name].append(cat["name"])
+        categories_by_group.setdefault(cat["group"], []).append(cat["name"])
 
-    # Display categories grouped by category group
     cols_per_row = 2
     for group_name, category_names in categories_by_group.items():
-        # Add divider and header for each category group
         st.markdown("---")
         st.header(f"📂 {group_name}")
 
-        # Create a grid layout for the plots in this group
         for i in range(0, len(category_names), cols_per_row):
             cols = st.columns(cols_per_row)
             for j, col in enumerate(cols):
@@ -338,6 +242,138 @@ def main():
                             st.plotly_chart(category_fig, use_container_width=True)
                         else:
                             st.info(f"No data available for {category_name}")
+
+
+def _filter_categories_page_data(
+    transactions_df,
+    budget_df,
+    categories_data,
+    start_date,
+    end_date,
+    selected_category_groups,
+    selected_categories,
+):
+    """Filter transactions, budget, and categories data for the categories page"""
+    excluded_groups = get_excluded_groups()
+    filtered_transactions_df = transactions_df[
+        ~transactions_df["category_group"].isin(excluded_groups)
+    ].copy()
+
+    filtered_transactions_df = filter_data_by_date_range(
+        filtered_transactions_df, start_date, end_date
+    )
+
+    filtered_categories_data = [
+        cat
+        for cat in categories_data
+        if cat["group"] in selected_category_groups
+        and cat["name"] in selected_categories
+    ]
+
+    if (
+        isinstance(filtered_transactions_df, pd.DataFrame)
+        and not filtered_transactions_df.empty
+    ):
+        filtered_transactions_df = filtered_transactions_df[
+            (filtered_transactions_df["category_group"].isin(selected_category_groups))
+            & (filtered_transactions_df["category"].isin(selected_categories))
+        ].copy()
+
+    if (
+        budget_df is not None
+        and isinstance(budget_df, pd.DataFrame)
+        and not budget_df.empty
+    ):
+        budget_df = budget_df[
+            (budget_df["category_group"].isin(selected_category_groups))
+            & (budget_df["category"].isin(selected_categories))
+        ].copy()
+
+    return filtered_transactions_df, budget_df, filtered_categories_data
+
+
+def main():
+    st.markdown(
+        '<h1 class="main-header">📋 Individual Category Analysis</h1>',
+        unsafe_allow_html=True,
+    )
+
+    if not st.session_state.get("data_loaded", False):
+        st.error("Data not loaded. Please go to the main page first.")
+        return
+
+    transactions_df = st.session_state.transactions_df
+    budget_df = st.session_state.budget_df
+    categories_data = st.session_state.categories_data
+    start_date = st.session_state.start_date
+    end_date = st.session_state.end_date
+    selected_category_groups = st.session_state.selected_category_groups
+
+    if transactions_df is None or budget_df is None or categories_data is None:
+        st.error("Data not available. Please go to the main page first.")
+        return
+
+    selected_categories = st.session_state.get("selected_categories", [])
+
+    filtered_transactions_df, budget_df, filtered_categories_data = (
+        _filter_categories_page_data(
+            transactions_df,
+            budget_df,
+            categories_data,
+            start_date,
+            end_date,
+            selected_category_groups,
+            selected_categories,
+        )
+    )
+    filtered_category_names = [cat["name"] for cat in filtered_categories_data]
+
+    global_month_range, _, _ = get_global_month_range(
+        filtered_transactions_df, start_date, end_date
+    )
+
+    total_target, total_available, last_12m_avg, total_suggested = (
+        calculate_summary_metrics(
+            filtered_categories_data,
+            budget_df,
+            filtered_transactions_df,
+            global_month_range,
+        )
+    )
+
+    ma_window = get_moving_average_window()
+    last_ma_avg = _calculate_last_ma_avg(
+        transactions_df, selected_category_groups, selected_categories, ma_window
+    )
+
+    _render_summary_metrics(
+        total_target,
+        total_available,
+        last_12m_avg,
+        total_suggested,
+        last_ma_avg,
+        ma_window,
+    )
+
+    global_scale_enabled = st.session_state.get("global_scale_enabled", False)
+    category_y_range = None
+    if global_scale_enabled and filtered_category_names:
+        category_y_range = calculate_global_y_range(
+            filtered_transactions_df,
+            budget_df,
+            categories_data,
+            "category",
+            filtered_category_names,
+        )
+
+    _render_category_groups(
+        filtered_categories_data,
+        filtered_transactions_df,
+        budget_df,
+        global_month_range,
+        categories_data,
+        category_y_range,
+    )
 
 
 if __name__ == "__main__":

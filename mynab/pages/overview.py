@@ -41,6 +41,117 @@ def create_category_group_plot(
     )
 
 
+def _filter_and_aggregate_overview_data(data_type, transactions_df):
+    """Filter transactions by overview data type and aggregate by month"""
+    if data_type == "total_income":
+        filtered_df = transactions_df[
+            (transactions_df["category"] == "Inflow: Ready to Assign")
+            & (transactions_df["payee_name"] != "Starting Balance")
+        ].copy()
+        color = "#2ca02c"
+    elif data_type == "total_expense":
+        filtered_df = transactions_df[
+            (transactions_df["category_group"].astype(str) != "nan")
+            & (transactions_df["category_group"].astype(str) != "")
+        ].copy()
+        color = "#ff7f0e"
+    else:  # total_net_income
+        filtered_df = transactions_df.copy()
+        color = "#1f77b4"
+
+    if filtered_df.empty:
+        return None, color
+
+    filtered_df["date"] = pd.to_datetime(filtered_df["date"])
+    filtered_df["month"] = filtered_df["date"].dt.to_period("M")
+
+    if data_type == "total_net_income":
+        income_df = filtered_df[
+            (filtered_df["category"] == "Inflow: Ready to Assign")
+            & (filtered_df["payee_name"] != "Starting Balance")
+        ]
+        expense_df = filtered_df[
+            (filtered_df["category_group"].astype(str) != "nan")
+            & (filtered_df["category_group"].astype(str) != "")
+        ]
+        monthly_income = income_df.groupby("month")["amount"].sum()
+        monthly_expenses = expense_df.groupby("month")["amount"].sum()
+        all_months = pd.concat([monthly_income, monthly_expenses]).index.unique()
+        monthly_net_income = pd.Series(
+            [
+                monthly_income.get(m, 0) + monthly_expenses.get(m, 0)
+                for m in all_months
+            ],
+            index=all_months,
+            dtype=float,
+        )
+        monthly_data = monthly_net_income.reset_index()
+        monthly_data.columns = ["month", "amount"]
+        monthly_data["month"] = monthly_data["month"].astype(str)
+    else:
+        monthly_data = filtered_df.groupby("month")["amount"].sum().reset_index()
+        monthly_data["month"] = monthly_data["month"].astype(str)
+
+    return monthly_data, color
+
+
+def _add_overview_forecast_traces(fig, complete_monthly_data, data_type):
+    """Add forecast trend line and 3-month extension to overview figure"""
+    if len(complete_monthly_data) < 3:
+        return None
+
+    actual_data = complete_monthly_data[complete_monthly_data["amount"] != 0].copy()
+    if len(actual_data) < 3:
+        return None
+
+    data_for_calculation = (
+        abs(actual_data["amount"])
+        if data_type == "total_expense"
+        else actual_data["amount"]
+    )
+    trend_line, forecast = calculate_forecast_trend(data_for_calculation)
+    trend_line_hover = [format_currency(val) for val in trend_line]
+
+    fig.add_trace(
+        go.Scatter(
+            x=actual_data["month"],
+            y=trend_line,
+            name="12-Month Forecast Trend",
+            line=dict(color="#d62728", width=2),
+            mode="lines",
+            hovertemplate="<b>%{x}</b><br>"
+            + "12-Month Forecast Trend: %{customdata}<br>"
+            + "<extra></extra>",
+            customdata=trend_line_hover,
+        )
+    )
+
+    last_month_date = actual_data["month_date"].iloc[-1]
+    future_months = pd.date_range(
+        start=last_month_date + pd.DateOffset(months=1),
+        periods=3,
+        freq="MS",
+    )
+
+    forecast_values = abs(forecast) if data_type == "total_expense" else forecast
+    forecast_hover = [format_currency(val) for val in forecast_values]
+
+    fig.add_trace(
+        go.Scatter(
+            x=future_months.strftime("%Y-%m"),
+            y=forecast_values,
+            name="Forecast (Next 3 Months)",
+            line=dict(color="#d62728", width=2, dash="dash"),
+            mode="lines",
+            hovertemplate="<b>%{x}</b><br>"
+            + "Forecast: %{customdata}<br>"
+            + "<extra></extra>",
+            customdata=forecast_hover,
+        )
+    )
+    return future_months
+
+
 def create_comprehensive_plot(
     data_type,
     transactions_df,
@@ -50,73 +161,12 @@ def create_comprehensive_plot(
     target_goal=None,
 ):
     """Create comprehensive plot for total income, total expense, or total net income"""
-    # Filter data based on type
-    if data_type == "total_income":
-        filtered_df = transactions_df[
-            (transactions_df["category"] == "Inflow: Ready to Assign")
-            & (transactions_df["payee_name"] != "Starting Balance")
-        ].copy()
-        color = "#2ca02c"  # Green for income
-    elif data_type == "total_expense":
-        # Include only transactions with a category group
-        filtered_df = transactions_df[
-            (transactions_df["category_group"].astype(str) != "nan")
-            & (transactions_df["category_group"].astype(str) != "")
-        ].copy()
-        color = "#ff7f0e"  # Orange for expenses
-    elif data_type == "total_net_income":
-        # For net income, we need to calculate monthly income + monthly expenses
-        # We'll process this differently in the aggregation step
-        filtered_df = (
-            transactions_df.copy()
-        )  # Use all transactions for net income calculation
-        color = "#1f77b4"  # Blue for net income
-
-    if filtered_df.empty:
+    monthly_data, color = _filter_and_aggregate_overview_data(
+        data_type, transactions_df
+    )
+    if monthly_data is None:
         return None
 
-    # Aggregate transactions by month
-    filtered_df["date"] = pd.to_datetime(filtered_df["date"])
-    filtered_df["month"] = filtered_df["date"].dt.to_period("M")
-
-    if data_type == "total_net_income":
-        # For net income, calculate monthly income + monthly expenses
-        # Filter for income transactions
-        income_df = filtered_df[
-            (filtered_df["category"] == "Inflow: Ready to Assign")
-            & (filtered_df["payee_name"] != "Starting Balance")
-        ]
-
-        # Filter for expense transactions (with category group)
-        expense_df = filtered_df[
-            (filtered_df["category_group"].astype(str) != "nan")
-            & (filtered_df["category_group"].astype(str) != "")
-        ]
-
-        # Group by month and sum
-        monthly_income = income_df.groupby("month")["amount"].sum()
-        monthly_expenses = expense_df.groupby("month")["amount"].sum()
-
-        # Combine months and calculate net income
-        all_months = pd.concat([monthly_income, monthly_expenses]).index.unique()
-        monthly_net_income = pd.Series(index=all_months, dtype=float)
-
-        for month in all_months:
-            income_amount = monthly_income.get(month, 0)
-            expense_amount = monthly_expenses.get(month, 0)
-            # Since expenses are already negative in YNAB, we add them to income
-            monthly_net_income[month] = income_amount + expense_amount
-
-        # Convert to the expected format
-        monthly_data = monthly_net_income.reset_index()
-        monthly_data.columns = ["month", "amount"]
-        monthly_data["month"] = monthly_data["month"].astype(str)
-    else:
-        # For income and expenses, use the original logic
-        monthly_data = filtered_df.groupby("month")["amount"].sum().reset_index()
-        monthly_data["month"] = monthly_data["month"].astype(str)
-
-    # Use the global month range
     all_months_df = pd.DataFrame(
         {
             "month_date": global_month_range,
@@ -124,23 +174,19 @@ def create_comprehensive_plot(
         }
     )
 
-    # Merge with actual data to include months with 0 values
-    complete_monthly_data = all_months_df.merge(
-        monthly_data[["month", "amount"]], on="month", how="left"
-    ).fillna(0)
+    complete_monthly_data = (
+        all_months_df.merge(monthly_data[["month", "amount"]], on="month", how="left")
+        .fillna(0)
+        .sort_values("month_date")
+    )
 
-    # Sort by month date for proper ordering
-    complete_monthly_data = complete_monthly_data.sort_values("month_date")
-
-    # Create single comprehensive plot
     fig = go.Figure()
 
-    # Bar chart for actual amounts - flip expenses to positive side
-    y_values = complete_monthly_data["amount"]
-    if data_type == "total_expense":
-        y_values = abs(complete_monthly_data["amount"])
-
-    # Pre-format hover text with currency formatting
+    y_values = (
+        abs(complete_monthly_data["amount"])
+        if data_type == "total_expense"
+        else complete_monthly_data["amount"]
+    )
     hover_text = [format_currency(val) for val in y_values]
 
     fig.add_trace(
@@ -181,74 +227,13 @@ def create_comprehensive_plot(
             )
         )
 
-    # Forecast trend uses visible date range only
-    if len(complete_monthly_data) >= 3:
-        actual_data_mask = complete_monthly_data["amount"] != 0
-        actual_data = complete_monthly_data[actual_data_mask].copy()
+    future_months = _add_overview_forecast_traces(
+        fig, complete_monthly_data, data_type
+    )
 
-        if len(actual_data) >= 3:
-            data_for_calculation = actual_data["amount"]
-            if data_type == "total_expense":
-                data_for_calculation = abs(actual_data["amount"])
-
-            # Forecast trend line - flip expenses to positive side
-            trend_line, forecast = calculate_forecast_trend(data_for_calculation)
-
-            # Pre-format hover text for trend line
-            trend_line_hover = [format_currency(val) for val in trend_line]
-
-            fig.add_trace(
-                go.Scatter(
-                    x=actual_data["month"],
-                    y=trend_line,
-                    name="12-Month Forecast Trend",
-                    line=dict(color="#d62728", width=2),
-                    mode="lines",
-                    hovertemplate="<b>%{x}</b><br>"
-                    + "12-Month Forecast Trend: %{customdata}<br>"
-                    + "<extra></extra>",
-                    customdata=trend_line_hover,
-                )
-            )
-
-            # Add forecast extension - flip expenses to positive side
-            # Get the last month date from the actual data
-            if len(actual_data) > 0:
-                last_month_date = actual_data["month_date"].iloc[-1]
-            else:
-                last_month_date = complete_monthly_data["month_date"].iloc[-1]
-
-            future_months = pd.date_range(
-                start=last_month_date + pd.DateOffset(months=1),
-                periods=3,
-                freq="MS",
-            )
-
-            forecast_values = forecast
-            if data_type == "total_expense":
-                forecast_values = abs(forecast)
-
-            # Pre-format hover text for forecast
-            forecast_hover = [format_currency(val) for val in forecast_values]
-
-            fig.add_trace(
-                go.Scatter(
-                    x=future_months.strftime("%Y-%m"),
-                    y=forecast_values,
-                    name="Forecast (Next 3 Months)",
-                    line=dict(color="#d62728", width=2, dash="dash"),
-                    mode="lines",
-                    hovertemplate="<b>%{x}</b><br>"
-                    + "Forecast: %{customdata}<br>"
-                    + "<extra></extra>",
-                    customdata=forecast_hover,
-                )
-            )
-
-    # Add target goal line for total_expense if provided
     if data_type == "total_expense" and target_goal is not None and target_goal > 0:
         all_months = complete_monthly_data["month"].tolist()
-        if "future_months" in locals():
+        if future_months is not None:
             all_months += future_months.strftime("%Y-%m").tolist()
         target_hover = [format_currency(target_goal)] * len(all_months)
         fig.add_trace(
@@ -263,7 +248,6 @@ def create_comprehensive_plot(
             )
         )
 
-    # Update layout
     layout_update = {
         "height": 500,
         "showlegend": False,
@@ -273,7 +257,6 @@ def create_comprehensive_plot(
         "barmode": "overlay",
     }
 
-    # Apply global y-axis range if provided
     if y_range is not None:
         layout_update["yaxis"] = {"range": y_range}
 

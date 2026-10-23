@@ -165,6 +165,48 @@ def create_account_plot(account_name, global_month_range):
     return fig, available, avg_12_months, metric_ma_avg, ma_window
 
 
+def _render_account_card(account_name, global_month_range):
+    """Render metrics and chart for a single account"""
+    st.subheader(account_name)
+    result = create_account_plot(account_name, global_month_range)
+    if result is None:
+        st.info(f"No data available for {account_name}")
+        return
+
+    fig, available, avg_12_months, metric_ma_avg, ma_window = result
+    mcol1, mcol2, mcol3 = st.columns(3)
+    with mcol1:
+        st.metric("Available (Sum)", format_currency(available))
+    with mcol2:
+        st.metric("12-Months Avg", format_currency(avg_12_months))
+    with mcol3:
+        ma_metric_label = (
+            "12-Months Weighted Avg"
+            if ma_window == "weighted"
+            else f"{ma_window}-Months Avg"
+        )
+        st.metric(
+            ma_metric_label,
+            format_currency(metric_ma_avg),
+        )
+    if fig:
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info(f"No data available for {account_name}")
+
+
+def _group_accounts_by_type(accounts_list):
+    """Filter non-credit accounts and group them by account type"""
+    non_credit_accounts = [
+        acc for acc in accounts_list if acc["type"] not in ("credit", "creditCard")
+    ]
+    accounts_by_type = {}
+    for acc in non_credit_accounts:
+        acc_type = acc["type"] or "Other"
+        accounts_by_type.setdefault(acc_type, []).append(acc)
+    return accounts_by_type
+
+
 def main():
     st.markdown(
         '<h1 class="main-header">🏦 Account Analysis</h1>',
@@ -184,19 +226,10 @@ def main():
         st.error("Data not available. Please go to the main page first.")
         return
 
-    non_credit_accounts = [
-        acc for acc in accounts_list if acc["type"] not in ("credit", "creditCard")
-    ]
-    if not non_credit_accounts:
+    accounts_by_type = _group_accounts_by_type(accounts_list)
+    if not accounts_by_type:
         st.info("No non-credit account data available.")
         return
-
-    accounts_by_type = {}
-    for acc in non_credit_accounts:
-        acc_type = acc["type"] or "Other"
-        if acc_type not in accounts_by_type:
-            accounts_by_type[acc_type] = []
-        accounts_by_type[acc_type].append(acc)
 
     filtered_transactions_df = filter_data_by_date_range(
         transactions_df, start_date, end_date
@@ -216,32 +249,8 @@ def main():
             cols = st.columns(cols_per_row)
             for j, col in enumerate(cols):
                 if i + j < len(accs):
-                    acc = accs[i + j]
-                    account_name = acc["name"]
                     with col:
-                        st.subheader(account_name)
-                        fig, available, avg_12_months, metric_ma_avg, ma_window = (
-                            create_account_plot(account_name, global_month_range)
-                        )
-                        mcol1, mcol2, mcol3 = st.columns(3)
-                        with mcol1:
-                            st.metric("Available (Sum)", format_currency(available))
-                        with mcol2:
-                            st.metric("12-Months Avg", format_currency(avg_12_months))
-                        with mcol3:
-                            ma_metric_label = (
-                                "12-Months Weighted Avg"
-                                if ma_window == "weighted"
-                                else f"{ma_window}-Months Avg"
-                            )
-                            st.metric(
-                                ma_metric_label,
-                                format_currency(metric_ma_avg),
-                            )
-                        if fig:
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.info(f"No data available for {account_name}")
+                        _render_account_card(accs[i + j]["name"], global_month_range)
 
 
 if __name__ == "__main__":
