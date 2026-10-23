@@ -302,12 +302,13 @@ def process_months_data(months_response, categories_data):
 
 
 MOVING_AVERAGE_WINDOW_OPTIONS = {
+    "12 months (weighted)": "weighted",
     "3 months": 3,
     "6 months": 6,
     "12 months": 12,
     "24 months": 24,
 }
-DEFAULT_MOVING_AVERAGE_WINDOW = 12
+DEFAULT_MOVING_AVERAGE_WINDOW = "weighted"
 
 
 def get_moving_average_window():
@@ -321,6 +322,8 @@ def get_moving_average_window():
 
 
 def moving_average_label(months):
+    if months == "weighted":
+        return "12-Month Weighted Moving Average"
     return f"{months}-Month Moving Average"
 
 
@@ -483,6 +486,24 @@ def build_overview_monthly_series(data_type, transactions_df=None):
     return _reindex_monthly_series(monthly.sort_index())
 
 
+def _weighted_mean(values):
+    """Linearly weighted mean where the most recent month has the highest weight."""
+    arr = np.asarray(values, dtype=float)
+    if len(arr) == 0:
+        return 0.0
+    weights = np.arange(1, len(arr) + 1, dtype=float)
+    return float(np.average(arr, weights=weights))
+
+
+def calculate_series_tail_average(series, window):
+    """Calculate absolute average of the tail of a monthly series for a given window."""
+    if series is None or len(series) == 0:
+        return 0
+    if window == "weighted":
+        return abs(_weighted_mean(series.tail(12)))
+    return abs(series.tail(window).mean())
+
+
 def moving_average_for_plot_months(full_monthly_series, months_to_plot, window=None):
     """Moving average from full history, values for selected plot months only."""
     if full_monthly_series is None or len(full_monthly_series) < 2:
@@ -496,6 +517,12 @@ def calculate_moving_average(data, window=12):
     """Calculate moving average for the given data"""
     if len(data) < 2:
         return data
+
+    if window == "weighted":
+        actual_window = min(12, len(data))
+        return data.rolling(window=actual_window, min_periods=1).apply(
+            _weighted_mean, raw=True
+        )
 
     # If we have less than the window size, use all available data
     actual_window = min(window, len(data))
@@ -545,19 +572,25 @@ def calculate_category_averages(
     monthly_expenses = cat_transactions.groupby("month")["amount"].sum()
     monthly_expenses = monthly_expenses.sort_index()
 
+    is_weighted = months == "weighted"
+    n_months = 12 if is_weighted else months
+
     # If global_month_range is provided, reindex to include all months
     if global_month_range is not None and len(global_month_range) > 0:
         # Convert global_month_range to PeriodIndex
         global_months = pd.PeriodIndex(global_month_range.strftime("%Y-%m"), freq="M")
         monthly_expenses = monthly_expenses.reindex(global_months, fill_value=0)
         # Use the last N months from the global range
-        last_n_months = monthly_expenses[-months:]
+        last_n_months = monthly_expenses[-n_months:]
     else:
         # Use the last N months from available data
-        last_n_months = monthly_expenses.tail(months)
+        last_n_months = monthly_expenses.tail(n_months)
 
     # Calculate average (convert to positive for display)
-    avg_amount = abs(last_n_months.mean())
+    if is_weighted:
+        avg_amount = abs(_weighted_mean(last_n_months))
+    else:
+        avg_amount = abs(last_n_months.mean())
 
     return avg_amount
 
@@ -599,12 +632,18 @@ def calculate_category_group_averages(group_name, transactions_df, months=3):
     if monthly_expenses.empty:
         return 0
 
+    is_weighted = months == "weighted"
+    n_months = 12 if is_weighted else months
+
     # Sort by month and get the last N months
     monthly_expenses = monthly_expenses.sort_index()
-    last_n_months = monthly_expenses.tail(months)
+    last_n_months = monthly_expenses.tail(n_months)
 
     # Calculate average (convert to positive for display)
-    avg_amount = abs(last_n_months.mean())
+    if is_weighted:
+        avg_amount = abs(_weighted_mean(last_n_months))
+    else:
+        avg_amount = abs(last_n_months.mean())
 
     return avg_amount
 
@@ -1058,10 +1097,17 @@ def create_unified_plot(
             delta_color=delta_color,
         )
 
+    if ma_window == "weighted":
+        ma_metric_label = "📊 Last 12 Months Weighted Avg"
+        ma_metric_help = "Weighted average monthly expenses over the last 12 months (plot moving average window)"
+    else:
+        ma_metric_label = f"📊 Last {ma_window} Months Avg"
+        ma_metric_help = f"Average monthly expenses over the last {ma_window} months (plot moving average window)"
+
     st.metric(
-        label=f"📊 Last {ma_window} Months Avg",
+        label=ma_metric_label,
         value=format_currency(last_ma_avg),
-        help=f"Average monthly expenses over the last {ma_window} months (plot moving average window)",
+        help=ma_metric_help,
     )
 
     # Aggregate transactions by month

@@ -3,6 +3,7 @@ import pandas as pd
 from mynab.utils import (
     calculate_category_averages,
     calculate_category_available_budget,
+    calculate_series_tail_average,
     filter_data_by_date_range,
     get_global_month_range,
     get_excluded_groups,
@@ -216,10 +217,8 @@ def main():
             tx["date"] = pd.to_datetime(tx["date"])
             tx["month"] = tx["date"].dt.to_period("M")
             monthly_totals_full = tx.groupby("month")["amount"].sum().sort_index()
-            last_ma_avg = (
-                abs(monthly_totals_full.tail(ma_window).mean())
-                if len(monthly_totals_full) > 0
-                else 0
+            last_ma_avg = calculate_series_tail_average(
+                monthly_totals_full, ma_window
             )
 
     # Display summary metrics at the top
@@ -254,10 +253,17 @@ def main():
             help="Average monthly expenses over the last 12 months",
         )
 
+        if ma_window == "weighted":
+            ma_metric_label = "📊 Last 12 Months Weighted Average"
+            ma_metric_help = "Weighted average monthly expenses over the last 12 months (plot moving average window)"
+        else:
+            ma_metric_label = f"📊 Last {ma_window} Months Average"
+            ma_metric_help = f"Average monthly expenses over the last {ma_window} months (plot moving average window)"
+
         st.metric(
-            label=f"📊 Last {ma_window} Months Average",
+            label=ma_metric_label,
             value=format_currency(last_ma_avg),
-            help=f"Average monthly expenses over the last {ma_window} months (plot moving average window)",
+            help=ma_metric_help,
         )
 
     with col2:

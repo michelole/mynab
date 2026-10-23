@@ -215,7 +215,7 @@ def setup_sidebar():
                 for label, months in MOVING_AVERAGE_WINDOW_OPTIONS.items()
                 if months == st.session_state.moving_average_window
             ),
-            "12 months",
+            "12 months (weighted)",
         )
         selected_ma_label = st.selectbox(
             "Moving average window",

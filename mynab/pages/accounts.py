@@ -5,6 +5,7 @@ from mynab.utils import (
     filter_data_by_date_range,
     get_global_month_range,
     calculate_moving_average,
+    calculate_series_tail_average,
     calculate_forecast_trend,
     format_currency,
     get_moving_average_window,
@@ -74,7 +75,7 @@ def create_account_plot(account_name, global_month_range):
 
     avg_12_months = abs(net_worth_full.tail(12).mean())
     ma_window = get_moving_average_window()
-    metric_ma_avg = abs(net_worth_full.tail(ma_window).mean())
+    metric_ma_avg = calculate_series_tail_average(net_worth_full, ma_window)
     available = net_worth_full.iloc[-1]
 
     full_series = abs(net_worth_full)
@@ -228,8 +229,13 @@ def main():
                         with mcol2:
                             st.metric("12-Months Avg", format_currency(avg_12_months))
                         with mcol3:
+                            ma_metric_label = (
+                                "12-Months Weighted Avg"
+                                if ma_window == "weighted"
+                                else f"{ma_window}-Months Avg"
+                            )
                             st.metric(
-                                f"{ma_window}-Months Avg",
+                                ma_metric_label,
                                 format_currency(metric_ma_avg),
                             )
                         if fig:

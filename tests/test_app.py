@@ -18,6 +18,33 @@ def test_calculate_moving_average():
     pd.testing.assert_series_equal(result, expected, check_dtype=False)
 
 
+def test_calculate_weighted_moving_average():
+    """Test 12-month weighted moving average calculation."""
+    from mynab.utils import (
+        DEFAULT_MOVING_AVERAGE_WINDOW,
+        MOVING_AVERAGE_WINDOW_OPTIONS,
+        calculate_moving_average,
+        calculate_series_tail_average,
+        moving_average_label,
+    )
+
+    assert DEFAULT_MOVING_AVERAGE_WINDOW == "weighted"
+    assert MOVING_AVERAGE_WINDOW_OPTIONS["12 months (weighted)"] == "weighted"
+    assert moving_average_label("weighted") == "12-Month Weighted Moving Average"
+
+    # 12 months: weights 1..12 for values 1..12 -> sum(i^2) / sum(i) = 650 / 78
+    data = pd.Series(list(range(1, 13)), dtype=float)
+    result = calculate_moving_average(data, window="weighted")
+    assert result.iloc[0] == pytest.approx(1.0)
+    assert result.iloc[1] == pytest.approx((1 * 1 + 2 * 2) / 3)
+    assert result.iloc[-1] == pytest.approx(650.0 / 78.0)
+
+    # Tail average helper matches last weighted moving average value
+    assert calculate_series_tail_average(data, "weighted") == pytest.approx(
+        650.0 / 78.0
+    )
+
+
 def test_calculate_forecast_trend():
     """Test forecast trend calculation."""
     from mynab.utils import calculate_forecast_trend
