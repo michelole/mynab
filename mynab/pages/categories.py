@@ -1,52 +1,20 @@
 import streamlit as st
-import pandas as pd
 from mynab.utils import (
-    calculate_category_averages,
     calculate_category_available_budget,
-    calculate_series_tail_average,
-    filter_data_by_date_range,
-    get_global_month_range,
-    get_excluded_groups,
-    create_unified_plot,
+    calculate_category_averages,
     calculate_global_y_range,
+    calculate_series_tail_average,
+    create_unified_plot,
+    filter_budget_by_selection,
+    filter_transactions_by_selection,
     format_currency,
+    format_target_delta,
+    get_global_month_range,
     get_moving_average_window,
-)
-
-# Page configuration
-st.set_page_config(
-    page_title="Individual Category Analysis - YNAB Dashboard",
-    page_icon="📋",
-    layout="wide",
-)
-
-# Custom CSS for better styling
-st.markdown(
-    """
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #1f77b4;
-    }
-    .plot-container {
-        background-color: white;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        margin-bottom: 2rem;
-    }
-</style>
-""",
-    unsafe_allow_html=True,
+    moving_average_metric_label,
+    render_in_grid,
+    render_page_header,
+    _group_monthly_amounts,
 )
 
 
@@ -75,28 +43,16 @@ def calculate_summary_metrics(
 ):
     """Calculate summary metrics for all categories"""
     total_target_budget = sum(
-        cat.get("target_amount", 0) or 0
+        cat.get("target_amount") or 0
         for cat in categories_data
         if cat.get("target_amount") is not None
     )
+    total_available_budget = budget_df["available"].sum() if not budget_df.empty else 0
 
-    total_available_budget = (
-        budget_df["available"].sum() if not budget_df.empty else 0
-    )
-
+    last_12_months_avg = 0
     if not filtered_transactions_df.empty:
-        all_transactions_df = filtered_transactions_df.copy()
-        all_transactions_df["date"] = pd.to_datetime(all_transactions_df["date"])
-        all_transactions_df["month"] = all_transactions_df["date"].dt.to_period("M")
-        monthly_totals = all_transactions_df.groupby("month")["amount"].sum()
-        if len(monthly_totals) >= 12:
-            last_12_months_avg = abs(monthly_totals.tail(12).mean())
-        else:
-            last_12_months_avg = (
-                abs(monthly_totals.mean()) if not monthly_totals.empty else 0
-            )
-    else:
-        last_12_months_avg = 0
+        monthly_totals = _group_monthly_amounts(filtered_transactions_df)
+        last_12_months_avg = calculate_series_tail_average(monthly_totals, 12)
 
     total_suggested_budget = 0
     for cat in categories_data:
@@ -104,11 +60,8 @@ def calculate_summary_metrics(
         avg_12_months = calculate_category_averages(
             category_name, filtered_transactions_df, 12, global_month_range
         )
-        available_budget = calculate_category_available_budget(
-            category_name, budget_df
-        )
-        suggested_budget = -(available_budget - (avg_12_months * 12)) / 12
-        total_suggested_budget += suggested_budget
+        available_budget = calculate_category_available_budget(category_name, budget_df)
+        total_suggested_budget += -(available_budget - (avg_12_months * 12)) / 12
 
     return (
         total_target_budget,
@@ -122,17 +75,12 @@ def _calculate_last_ma_avg(
     transactions_df, selected_category_groups, selected_categories, ma_window
 ):
     """Calculate moving average tail metric across selected categories"""
-    if not isinstance(transactions_df, pd.DataFrame) or transactions_df.empty:
-        return 0
-    tx = transactions_df[
-        (transactions_df["category_group"].isin(selected_category_groups))
-        & (transactions_df["category"].isin(selected_categories))
-    ].copy()
+    tx = filter_transactions_by_selection(
+        transactions_df, selected_category_groups, selected_categories
+    )
     if tx.empty:
         return 0
-    tx["date"] = pd.to_datetime(tx["date"])
-    tx["month"] = tx["date"].dt.to_period("M")
-    monthly_totals_full = tx.groupby("month")["amount"].sum().sort_index()
+    monthly_totals_full = _group_monthly_amounts(tx)
     return calculate_series_tail_average(monthly_totals_full, ma_window)
 
 
@@ -151,15 +99,9 @@ def _render_summary_metrics(
             help="Sum of all category target budgets",
         )
 
-        if total_target > 0:
-            delta_12m = last_12m_avg - total_target
-            delta_pct_12m = (delta_12m / total_target) * 100
-            delta_text_12m = f"{delta_pct_12m:+.1f}%" if delta_12m != 0 else "On target"
-            delta_color_12m = "inverse"
-        else:
-            delta_text_12m = None
-            delta_color_12m = "normal"
-
+        delta_text_12m, delta_color_12m = format_target_delta(
+            last_12m_avg, total_target, zero_text="On target"
+        )
         st.metric(
             label="📊 Last 12 Months Average",
             value=format_currency(last_12m_avg),
@@ -168,13 +110,9 @@ def _render_summary_metrics(
             help="Average monthly expenses over the last 12 months",
         )
 
-        if ma_window == "weighted":
-            ma_metric_label = "📊 Last 12 Months Weighted Average"
-            ma_metric_help = "Weighted average monthly expenses over the last 12 months (plot moving average window)"
-        else:
-            ma_metric_label = f"📊 Last {ma_window} Months Average"
-            ma_metric_help = f"Average monthly expenses over the last {ma_window} months (plot moving average window)"
-
+        ma_metric_label, ma_metric_help = moving_average_metric_label(
+            ma_window, short=False
+        )
         st.metric(
             label=ma_metric_label,
             value=format_currency(last_ma_avg),
@@ -188,14 +126,7 @@ def _render_summary_metrics(
             help="Sum of all category available budgets",
         )
 
-        if total_target > 0:
-            delta_ratio = ((total_suggested - total_target) / total_target) * 100
-            delta_text = f"{delta_ratio:+.1f}%"
-            delta_color = "inverse"
-        else:
-            delta_text = None
-            delta_color = "inverse"
-
+        delta_text, delta_color = format_target_delta(total_suggested, total_target)
         st.metric(
             label="💡 Total Suggested Budget",
             value=format_currency(total_suggested),
@@ -203,6 +134,30 @@ def _render_summary_metrics(
             delta_color=delta_color,
             help="Sum of all category suggested budgets",
         )
+
+
+def _render_single_category_card(
+    category_name,
+    filtered_transactions_df,
+    budget_df,
+    global_month_range,
+    categories_data,
+    category_y_range,
+):
+    """Render subheader and plot for a single category."""
+    st.subheader(category_name)
+    category_fig = create_category_plot(
+        category_name,
+        filtered_transactions_df,
+        budget_df,
+        global_month_range,
+        categories_data,
+        category_y_range,
+    )
+    if category_fig:
+        st.plotly_chart(category_fig, use_container_width=True)
+    else:
+        st.info(f"No data available for {category_name}")
 
 
 def _render_category_groups(
@@ -218,30 +173,20 @@ def _render_category_groups(
     for cat in filtered_categories_data:
         categories_by_group.setdefault(cat["group"], []).append(cat["name"])
 
-    cols_per_row = 2
     for group_name, category_names in categories_by_group.items():
         st.markdown("---")
         st.header(f"📂 {group_name}")
-
-        for i in range(0, len(category_names), cols_per_row):
-            cols = st.columns(cols_per_row)
-            for j, col in enumerate(cols):
-                if i + j < len(category_names):
-                    category_name = category_names[i + j]
-                    with col:
-                        st.subheader(category_name)
-                        category_fig = create_category_plot(
-                            category_name,
-                            filtered_transactions_df,
-                            budget_df,
-                            global_month_range,
-                            categories_data,
-                            category_y_range,
-                        )
-                        if category_fig:
-                            st.plotly_chart(category_fig, use_container_width=True)
-                        else:
-                            st.info(f"No data available for {category_name}")
+        render_in_grid(
+            category_names,
+            lambda cat_name: _render_single_category_card(
+                cat_name,
+                filtered_transactions_df,
+                budget_df,
+                global_month_range,
+                categories_data,
+                category_y_range,
+            ),
+        )
 
 
 def _filter_categories_page_data(
@@ -254,49 +199,27 @@ def _filter_categories_page_data(
     selected_categories,
 ):
     """Filter transactions, budget, and categories data for the categories page"""
-    excluded_groups = get_excluded_groups()
-    filtered_transactions_df = transactions_df[
-        ~transactions_df["category_group"].isin(excluded_groups)
-    ].copy()
-
-    filtered_transactions_df = filter_data_by_date_range(
-        filtered_transactions_df, start_date, end_date
+    filtered_transactions_df = filter_transactions_by_selection(
+        transactions_df,
+        selected_category_groups,
+        selected_categories,
+        start_date=start_date,
+        end_date=end_date,
     )
-
+    filtered_budget_df = filter_budget_by_selection(
+        budget_df, selected_category_groups, selected_categories
+    )
     filtered_categories_data = [
         cat
         for cat in categories_data
         if cat["group"] in selected_category_groups
         and cat["name"] in selected_categories
     ]
-
-    if (
-        isinstance(filtered_transactions_df, pd.DataFrame)
-        and not filtered_transactions_df.empty
-    ):
-        filtered_transactions_df = filtered_transactions_df[
-            (filtered_transactions_df["category_group"].isin(selected_category_groups))
-            & (filtered_transactions_df["category"].isin(selected_categories))
-        ].copy()
-
-    if (
-        budget_df is not None
-        and isinstance(budget_df, pd.DataFrame)
-        and not budget_df.empty
-    ):
-        budget_df = budget_df[
-            (budget_df["category_group"].isin(selected_category_groups))
-            & (budget_df["category"].isin(selected_categories))
-        ].copy()
-
-    return filtered_transactions_df, budget_df, filtered_categories_data
+    return filtered_transactions_df, filtered_budget_df, filtered_categories_data
 
 
 def main():
-    st.markdown(
-        '<h1 class="main-header">📋 Individual Category Analysis</h1>',
-        unsafe_allow_html=True,
-    )
+    render_page_header("📋 Individual Category Analysis")
 
     if not st.session_state.get("data_loaded", False):
         st.error("Data not loaded. Please go to the main page first.")
@@ -355,9 +278,8 @@ def main():
         ma_window,
     )
 
-    global_scale_enabled = st.session_state.get("global_scale_enabled", False)
     category_y_range = None
-    if global_scale_enabled and filtered_category_names:
+    if st.session_state.get("global_scale_enabled", False) and filtered_category_names:
         category_y_range = calculate_global_y_range(
             filtered_transactions_df,
             budget_df,

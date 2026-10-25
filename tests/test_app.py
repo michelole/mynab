@@ -1,5 +1,6 @@
 """Tests for the YNAB Budget Dashboard app."""
 
+from datetime import date
 import pytest
 import pandas as pd
 
@@ -71,11 +72,12 @@ def test_process_categories_data():
 
     # Mock categories response
     class MockCategory:
-        def __init__(self, id, name, hidden=False, deleted=False):
+        def __init__(self, id, name, hidden=False, deleted=False, goal_target=None):
             self.id = id
             self.name = name
             self.hidden = hidden
             self.deleted = deleted
+            self.goal_target = goal_target
 
     class MockCategoryGroup:
         def __init__(self, id, name, categories):
@@ -89,31 +91,44 @@ def test_process_categories_data():
 
     # Create mock data
     categories = [
-        MockCategory("cat1", "Food", False, False),
+        MockCategory("cat1", "Food", False, False, goal_target=250000),
         MockCategory("cat2", "Transport", False, False),
         MockCategory("cat3", "Hidden", True, False),
         MockCategory("cat4", "Deleted", False, True),
     ]
 
     group = MockCategoryGroup("group1", "Living Expenses", categories)
-    response = MockCategoriesResponse([group])
+    excluded_group = MockCategoryGroup(
+        "group2", "Internal Master Category", [MockCategory("cat5", "Internal")]
+    )
+    response = MockCategoriesResponse([group, excluded_group])
 
     # Process data
     categories_data, category_groups = process_categories_data(response)
 
-    # Check that hidden and deleted categories are filtered out
+    # Check that hidden, deleted, and excluded-group categories are filtered out
     assert len(categories_data) == 2
-    assert any(cat["name"] == "Food" for cat in categories_data)
+    assert "Internal Master Category" not in category_groups
+    assert any(
+        cat["name"] == "Food" and cat["target_amount"] == 250.0
+        for cat in categories_data
+    )
     assert any(cat["name"] == "Transport" for cat in categories_data)
     assert not any(cat["name"] == "Hidden" for cat in categories_data)
     assert not any(cat["name"] == "Deleted" for cat in categories_data)
 
 
 def test_process_transactions_data():
-    """Test transactions data processing."""
+    """Test transactions data processing including split subtransactions."""
     from mynab.utils import process_transactions_data
 
-    # Mock transaction
+    class MockSubTransaction:
+        def __init__(self, amount, category_id, category_name, memo=None):
+            self.amount = amount
+            self.category_id = category_id
+            self.category_name = category_name
+            self.memo = memo
+
     class MockTransaction:
         def __init__(
             self,
@@ -124,6 +139,7 @@ def test_process_transactions_data():
             payee_name=None,
             memo=None,
             id=None,
+            subtransactions=None,
         ):
             self.date = date
             self.amount = amount
@@ -132,21 +148,30 @@ def test_process_transactions_data():
             self.payee_name = payee_name
             self.memo = memo
             self.id = id or "txn1"
+            self.subtransactions = subtransactions
 
     class MockTransactionsResponse:
         def __init__(self, transactions):
             self.data = type("Data", (), {"transactions": transactions})()
 
-    # Create mock data
     transactions = [
         MockTransaction(
             "2024-01-01", -5000, "cat1", "Food", "Grocery Store", "Food shopping"
         ),
-        MockTransaction(
-            "2024-01-02", 1000, "cat1", "Food", "Refund", "Return"
-        ),  # Income
+        MockTransaction("2024-01-02", 1000, "cat1", "Food", "Refund", "Return"),
         MockTransaction(
             "2024-01-03", -2000, "cat2", "Transport", "Gas Station", "Fuel"
+        ),
+        MockTransaction(
+            "2024-01-04",
+            -3000,
+            payee_name="Supermarket",
+            memo="Parent memo",
+            id="txn_split",
+            subtransactions=[
+                MockSubTransaction(-1800, "cat1", "Food", "Split food"),
+                MockSubTransaction(-1200, "cat2", "Transport"),
+            ],
         ),
     ]
 
@@ -156,16 +181,66 @@ def test_process_transactions_data():
         {"id": "cat2", "name": "Transport", "group": "Living Expenses"},
     ]
 
-    # Process data
     df = process_transactions_data(response, categories_data)
 
-    # Check that all transactions are included
-    assert len(df) == 3
+    assert len(df) == 5
+    assert df.iloc[0]["amount"] == -5.0
+    assert df.iloc[1]["amount"] == 1.0
+    assert df.iloc[2]["amount"] == -2.0
+    assert df.iloc[3]["amount"] == -1.8
+    assert df.iloc[3]["memo"] == "Split food"
+    assert df.iloc[4]["amount"] == -1.2
+    assert df.iloc[4]["memo"] == "Parent memo"
 
-    # Check that amounts are converted from millidollars
-    assert df.iloc[0]["amount"] == -5.0  # -5000 millidollars = -€5.00
-    assert df.iloc[1]["amount"] == 1.0  # 1000 millidollars = €1.00
-    assert df.iloc[2]["amount"] == -2.0  # -2000 millidollars = -€2.00
+
+def test_overview_monthly_totals_and_presets():
+    """Test overview monthly aggregation, target delta formatting, and month range presets."""
+    from mynab.utils import (
+        compute_overview_monthly_totals,
+        format_target_delta,
+        resolve_month_range_preset,
+    )
+
+    df = pd.DataFrame(
+        [
+            {
+                "date": "2025-01-10",
+                "amount": 3000.0,
+                "category": "Inflow: Ready to Assign",
+                "category_group": "",
+                "payee_name": "Employer",
+            },
+            {
+                "date": "2025-01-15",
+                "amount": -1200.0,
+                "category": "Groceries",
+                "category_group": "Necessidades",
+                "payee_name": "Market",
+            },
+        ]
+    )
+
+    inc = compute_overview_monthly_totals(df, "total_income")
+    exp = compute_overview_monthly_totals(df, "total_expense", abs_expense=True)
+    net = compute_overview_monthly_totals(df, "total_net_income")
+
+    assert inc.iloc[0] == pytest.approx(3000.0)
+    assert exp.iloc[0] == pytest.approx(1200.0)
+    assert net.iloc[0] == pytest.approx(1800.0)
+
+    delta_text, delta_color = format_target_delta(110.0, 100.0)
+    assert delta_text == "+10.0%"
+    assert delta_color == "inverse"
+    assert format_target_delta(100.0, 100.0, zero_text="On target") == (
+        "On target",
+        "inverse",
+    )
+
+    avail = [date(2025, m, 1) for m in range(1, 13)]
+    assert resolve_month_range_preset("All Dates", avail) == (
+        date(2025, 1, 1),
+        date(2025, 12, 1),
+    )
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-.PHONY: help install install-dev run format lint type-check test clean
+.PHONY: help install install-dev run format lint type-check test check clean
 
 help: ## Show this help message
 	@echo "Available commands:"
@@ -8,20 +8,20 @@ install: ## Install dependencies
 	uv sync
 
 install-dev: ## Install dependencies with development extras
-	uv sync --extra dev
+	uv sync --group dev
 
 run: ## Run the Streamlit dashboard
-	uv run streamlit run app.py
+	uv run streamlit run mynab/app.py
 
-format: ## Format code with black and isort
-	uv run black .
-	uv run isort .
+format: ## Format code with ruff
+	uv run ruff format .
+	uv run ruff check --fix .
 
-lint: ## Run linting with flake8
-	uv run flake8 .
+lint: ## Run linting with ruff
+	uv run ruff check .
 
-type-check: ## Run type checking with mypy
-	uv run mypy .
+type-check: ## Run type checking with ty
+	uv run ty check
 
 test: ## Run tests
 	uv run pytest
@@ -33,4 +33,4 @@ clean: ## Clean up generated files
 	find . -type d -name "__pycache__" -delete
 	find . -type d -name "*.egg-info" -exec rm -rf {} +
 	rm -rf .pytest_cache
-	rm -rf .mypy_cache 
+	rm -rf .ruff_cache

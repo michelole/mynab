@@ -170,5 +170,8 @@ cython_debug/
 # Ruff stuff:
 .ruff_cache/
 
+# Git worktrees:
+.worktrees/
+
 # PyPI configuration file
 .pypirc
