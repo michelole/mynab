@@ -24,7 +24,7 @@ def main():
     )
 
     if budget_df is not None and not budget_df.empty:
-        st.dataframe(budget_df, use_container_width=True, height=600)
+        st.dataframe(budget_df, width="stretch", height=600)
     else:
         st.info("No budget data available - using transaction data for analysis")
 

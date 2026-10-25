@@ -155,7 +155,7 @@ def _render_single_category_card(
         category_y_range,
     )
     if category_fig:
-        st.plotly_chart(category_fig, use_container_width=True)
+        st.plotly_chart(category_fig, width="stretch")
     else:
         st.info(f"No data available for {category_name}")
 

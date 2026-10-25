@@ -40,7 +40,7 @@ def main():
     )
     st.dataframe(
         display_df,
-        use_container_width=True,
+        width="stretch",
         column_config={
             "import_payee_name_original": st.column_config.TextColumn(
                 "import_payee_name_original", width="large"

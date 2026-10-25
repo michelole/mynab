@@ -199,7 +199,7 @@ def _render_overview_charts_row(
             overview_y_range,
         )
         if income_fig:
-            st.plotly_chart(income_fig, use_container_width=True)
+            st.plotly_chart(income_fig, width="stretch")
         else:
             st.info("No income data available")
 
@@ -219,7 +219,7 @@ def _render_overview_charts_row(
             target_goal=total_target_goal,
         )
         if expense_fig:
-            st.plotly_chart(expense_fig, use_container_width=True)
+            st.plotly_chart(expense_fig, width="stretch")
         else:
             st.info("No expense data available")
 
@@ -233,7 +233,7 @@ def _render_overview_charts_row(
             overview_y_range,
         )
         if net_income_fig:
-            st.plotly_chart(net_income_fig, use_container_width=True)
+            st.plotly_chart(net_income_fig, width="stretch")
         else:
             st.info("No net income data available")
 
@@ -257,7 +257,7 @@ def _render_single_group_card(
         category_group_y_range,
     )
     if group_fig:
-        st.plotly_chart(group_fig, use_container_width=True)
+        st.plotly_chart(group_fig, width="stretch")
     else:
         st.info(f"No data available for {group_name}")
 

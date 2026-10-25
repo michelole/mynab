@@ -105,7 +105,7 @@ def _render_account_card(account_name, global_month_range):
         )
         st.metric(ma_metric_label, format_currency(metric_ma_avg))
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _group_accounts_by_type(accounts_list):
