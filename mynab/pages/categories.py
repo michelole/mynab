@@ -1,17 +1,14 @@
 import streamlit as st
 from mynab.utils import (
-    calculate_category_available_budget,
-    calculate_category_averages,
     calculate_global_y_range,
-    calculate_series_tail_average,
+    calculate_series_window_averages,
     create_unified_plot,
     filter_budget_by_selection,
     filter_transactions_by_selection,
     format_currency,
-    format_target_delta,
+    get_full_month_period_index,
     get_global_month_range,
-    get_moving_average_window,
-    moving_average_metric_label,
+    render_average_metrics_grid,
     render_in_grid,
     render_page_header,
     _group_monthly_amounts,
@@ -39,9 +36,13 @@ def create_category_plot(
 
 
 def calculate_summary_metrics(
-    categories_data, budget_df, filtered_transactions_df, global_month_range
+    categories_data,
+    budget_df,
+    transactions_df,
+    selected_category_groups,
+    selected_categories,
 ):
-    """Calculate summary metrics for all categories"""
+    """Calculate summary metrics for all selected categories from full transaction history"""
     total_target_budget = sum(
         cat.get("target_amount") or 0
         for cat in categories_data
@@ -49,76 +50,31 @@ def calculate_summary_metrics(
     )
     total_available_budget = budget_df["available"].sum() if not budget_df.empty else 0
 
-    last_12_months_avg = 0
-    if not filtered_transactions_df.empty:
-        monthly_totals = _group_monthly_amounts(filtered_transactions_df)
-        last_12_months_avg = calculate_series_tail_average(monthly_totals, 12)
-
-    total_suggested_budget = 0
-    for cat in categories_data:
-        category_name = cat["name"]
-        avg_12_months = calculate_category_averages(
-            category_name, filtered_transactions_df, 12, global_month_range
-        )
-        available_budget = calculate_category_available_budget(category_name, budget_df)
-        total_suggested_budget += -(available_budget - (avg_12_months * 12)) / 12
-
-    return (
-        total_target_budget,
-        total_available_budget,
-        last_12_months_avg,
-        total_suggested_budget,
-    )
-
-
-def _calculate_last_ma_avg(
-    transactions_df, selected_category_groups, selected_categories, ma_window
-):
-    """Calculate moving average tail metric across selected categories"""
     tx = filter_transactions_by_selection(
         transactions_df, selected_category_groups, selected_categories
     )
-    if tx.empty:
-        return 0
-    monthly_totals_full = _group_monthly_amounts(tx)
-    return calculate_series_tail_average(monthly_totals_full, ma_window)
+    monthly_totals = None
+    if not tx.empty:
+        monthly_totals = _group_monthly_amounts(tx)
+        full_months = get_full_month_period_index(transactions_df)
+        if full_months is not None and len(full_months) > 0:
+            monthly_totals = monthly_totals.reindex(full_months, fill_value=0)
+
+    averages = calculate_series_window_averages(monthly_totals)
+    return total_target_budget, total_available_budget, averages
 
 
-def _render_summary_metrics(
-    total_target, total_available, last_12m_avg, total_suggested, last_ma_avg, ma_window
-):
+def _render_summary_metrics(total_target, total_available, averages):
     """Display summary metrics at the top of the categories page"""
     st.header("📊 Summary Metrics")
 
     col1, col2 = st.columns(2)
-
     with col1:
         st.metric(
             label="🎯 Total Target Budget",
             value=format_currency(total_target),
             help="Sum of all category target budgets",
         )
-
-        delta_text_12m, delta_color_12m = format_target_delta(
-            last_12m_avg, total_target, zero_text="On target"
-        )
-        st.metric(
-            label="📊 Last 12 Months Average",
-            value=format_currency(last_12m_avg),
-            delta=delta_text_12m,
-            delta_color=delta_color_12m,
-            help="Average monthly expenses over the last 12 months",
-        )
-
-        ma_metric_label, ma_metric_help = moving_average_metric_label(
-            ma_window, short=False
-        )
-        st.metric(
-            label=ma_metric_label,
-            value=format_currency(last_ma_avg),
-            help=ma_metric_help,
-        )
-
     with col2:
         st.metric(
             label="💰 Total Available Budget",
@@ -126,14 +82,7 @@ def _render_summary_metrics(
             help="Sum of all category available budgets",
         )
 
-        delta_text, delta_color = format_target_delta(total_suggested, total_target)
-        st.metric(
-            label="💡 Total Suggested Budget",
-            value=format_currency(total_suggested),
-            delta=delta_text,
-            delta_color=delta_color,
-            help="Sum of all category suggested budgets",
-        )
+    render_average_metrics_grid(averages, target_amount=total_target, short=False)
 
 
 def _render_single_category_card(
@@ -255,28 +204,15 @@ def main():
         filtered_transactions_df, start_date, end_date
     )
 
-    total_target, total_available, last_12m_avg, total_suggested = (
-        calculate_summary_metrics(
-            filtered_categories_data,
-            budget_df,
-            filtered_transactions_df,
-            global_month_range,
-        )
+    total_target, total_available, averages = calculate_summary_metrics(
+        filtered_categories_data,
+        budget_df,
+        transactions_df,
+        selected_category_groups,
+        selected_categories,
     )
 
-    ma_window = get_moving_average_window()
-    last_ma_avg = _calculate_last_ma_avg(
-        transactions_df, selected_category_groups, selected_categories, ma_window
-    )
-
-    _render_summary_metrics(
-        total_target,
-        total_available,
-        last_12m_avg,
-        total_suggested,
-        last_ma_avg,
-        ma_window,
-    )
+    _render_summary_metrics(total_target, total_available, averages)
 
     category_y_range = None
     if st.session_state.get("global_scale_enabled", False) and filtered_category_names:

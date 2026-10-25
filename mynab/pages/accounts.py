@@ -8,13 +8,14 @@ from mynab.utils import (
     apply_standard_plot_layout,
     build_account_net_worth_series,
     calculate_moving_average,
-    calculate_series_tail_average,
+    calculate_series_window_averages,
     filter_data_by_date_range,
     format_currency,
     get_global_month_range,
     get_moving_average_window,
     map_account_net_worth_to_months,
     map_moving_average_to_months,
+    render_average_metrics_grid,
     render_in_grid,
     render_page_header,
 )
@@ -45,7 +46,7 @@ def _add_account_ma_and_forecast_traces(
 
 
 def create_account_plot(account_name, global_month_range):
-    """Create a plot for a single account showing available, forecast, and 12-months average"""
+    """Create a plot for a single account showing available, forecast, and multi-window averages"""
     end_period = pd.Period(global_month_range[-1].strftime("%Y-%m"), freq="M")
     net_worth_full = build_account_net_worth_series(account_name, end_period=end_period)
     if net_worth_full is None or net_worth_full.empty:
@@ -62,9 +63,8 @@ def create_account_plot(account_name, global_month_range):
         }
     ).sort_values("month_date")
 
-    avg_12_months = abs(net_worth_full.tail(12).mean())
+    averages = calculate_series_window_averages(net_worth_full)
     ma_window = get_moving_average_window()
-    metric_ma_avg = calculate_series_tail_average(net_worth_full, ma_window)
     available = net_worth_full.iloc[-1]
 
     fig = go.Figure()
@@ -80,7 +80,7 @@ def create_account_plot(account_name, global_month_range):
     )
     apply_standard_plot_layout(fig, height=400, yaxis_title="Net Worth (€)")
 
-    return fig, available, avg_12_months, metric_ma_avg, ma_window
+    return fig, available, averages
 
 
 def _render_account_card(account_name, global_month_range):
@@ -91,19 +91,11 @@ def _render_account_card(account_name, global_month_range):
         st.info(f"No data available for {account_name}")
         return
 
-    fig, available, avg_12_months, metric_ma_avg, ma_window = result
-    mcol1, mcol2, mcol3 = st.columns(3)
-    with mcol1:
+    fig, available, averages = result
+    col1, _ = st.columns(2)
+    with col1:
         st.metric("Available (Sum)", format_currency(available))
-    with mcol2:
-        st.metric("12-Months Avg", format_currency(avg_12_months))
-    with mcol3:
-        ma_metric_label = (
-            "12-Months Weighted Avg"
-            if ma_window == "weighted"
-            else f"{ma_window}-Months Avg"
-        )
-        st.metric(ma_metric_label, format_currency(metric_ma_avg))
+    render_average_metrics_grid(averages, short=True)
 
     st.plotly_chart(fig, width="stretch")
 

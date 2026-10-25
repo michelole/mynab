@@ -287,6 +287,7 @@ MOVING_AVERAGE_WINDOW_OPTIONS = {
     "24 months": 24,
 }
 DEFAULT_MOVING_AVERAGE_WINDOW = "weighted"
+AVERAGE_WINDOWS = (3, 6, 12, 24)
 
 
 def get_moving_average_window():
@@ -303,18 +304,6 @@ def moving_average_label(months):
     if months == "weighted":
         return "12-Month Weighted Moving Average"
     return f"{months}-Month Moving Average"
-
-
-def moving_average_metric_label(ma_window, short=True):
-    """Format metric label and help text for the selected moving average window."""
-    unit = "Avg" if short else "Average"
-    if ma_window == "weighted":
-        label = f"📊 Last 12 Months Weighted {unit}"
-        help_text = "Weighted average monthly expenses over the last 12 months (plot moving average window)"
-    else:
-        label = f"📊 Last {ma_window} Months {unit}"
-        help_text = f"Average monthly expenses over the last {ma_window} months (plot moving average window)"
-    return label, help_text
 
 
 def map_moving_average_to_months(ma_series, months_to_plot):
@@ -342,7 +331,8 @@ def build_account_net_worth_series(account_name, transactions_df=None, end_perio
         return None
 
     monthly_amt = _group_monthly_amounts(txf)
-    range_end = monthly_amt.index.max()
+    dataset_end = pd.to_datetime(transactions_df["date"]).max().to_period("M")
+    range_end = max(monthly_amt.index.max(), dataset_end)
     if end_period is not None:
         range_end = max(range_end, end_period)
     full_index = pd.period_range(start=monthly_amt.index.min(), end=range_end, freq="M")
@@ -587,26 +577,74 @@ def calculate_forecast_trend(data, periods=config.FORECAST_PERIODS):
     return pd.Series(trend_line, index=data.index), pd.Series(forecast, index=future_x)
 
 
+def get_full_month_period_index(transactions_df):
+    """Return a monthly PeriodIndex spanning the full date range of transactions_df."""
+    if not isinstance(transactions_df, pd.DataFrame) or transactions_df.empty:
+        return None
+    dates = pd.to_datetime(transactions_df["date"])
+    return pd.period_range(
+        start=dates.min().to_period("M"),
+        end=dates.max().to_period("M"),
+        freq="M",
+    )
+
+
+def calculate_series_window_averages(series, windows=AVERAGE_WINDOWS):
+    """Calculate tail averages for each window in windows (default 3/6/12/24 months)."""
+    return {w: calculate_series_tail_average(series, w) for w in windows}
+
+
+def _resolve_unfiltered_transactions(fallback_df=None):
+    """Return full unfiltered transactions DataFrame from session state or fallback."""
+    full_df = st.session_state.get("transactions_df")
+    if isinstance(full_df, pd.DataFrame) and not full_df.empty:
+        return full_df
+    return fallback_df
+
+
+def _build_entity_monthly_expenses(
+    column, name, transactions_df, global_month_range=None
+):
+    """Build monthly expense series for a category or group, zero-filled across full months."""
+    if not isinstance(transactions_df, pd.DataFrame) or transactions_df.empty:
+        return None
+
+    entity_tx = transactions_df[transactions_df[column] == name]
+    if entity_tx.empty:
+        return None
+
+    monthly_expenses = _group_monthly_amounts(entity_tx)
+    if monthly_expenses.empty:
+        return None
+
+    if global_month_range is not None and len(global_month_range) > 0:
+        month_index = pd.PeriodIndex(global_month_range.strftime("%Y-%m"), freq="M")
+    else:
+        month_index = get_full_month_period_index(transactions_df)
+
+    if month_index is not None and len(month_index) > 0:
+        monthly_expenses = monthly_expenses.reindex(month_index, fill_value=0)
+    return monthly_expenses
+
+
 def _calculate_entity_averages(
     column, name, transactions_df, months=12, global_month_range=None
 ):
     """Shared average spending calculation for a category or category group."""
-    if not isinstance(transactions_df, pd.DataFrame) or transactions_df.empty:
-        return 0
-
-    entity_tx = transactions_df[transactions_df[column] == name]
-    if entity_tx.empty:
-        return 0
-
-    monthly_expenses = _group_monthly_amounts(entity_tx)
-    if monthly_expenses.empty:
-        return 0
-
-    if global_month_range is not None and len(global_month_range) > 0:
-        global_months = pd.PeriodIndex(global_month_range.strftime("%Y-%m"), freq="M")
-        monthly_expenses = monthly_expenses.reindex(global_months, fill_value=0)
-
+    monthly_expenses = _build_entity_monthly_expenses(
+        column, name, transactions_df, global_month_range
+    )
     return calculate_series_tail_average(monthly_expenses, months)
+
+
+def calculate_entity_window_averages(
+    plot_type, name, transactions_df=None, windows=AVERAGE_WINDOWS
+):
+    """Calculate 3/6/12/24-month averages from full unfiltered transaction history."""
+    tx_df = _resolve_unfiltered_transactions(transactions_df)
+    column = "category_group" if plot_type == "category_group" else "category"
+    monthly_expenses = _build_entity_monthly_expenses(column, name, tx_df)
+    return calculate_series_window_averages(monthly_expenses, windows)
 
 
 def calculate_category_averages(
@@ -1021,8 +1059,28 @@ def apply_standard_plot_layout(fig, height=400, y_range=None, yaxis_title="Amoun
     return fig
 
 
+def render_average_metrics_grid(averages, target_amount=None, short=True):
+    """Render a 2x2 grid of 3, 6, 12, and 24-month average metrics."""
+    unit = "Avg" if short else "Average"
+    for row_windows in ((3, 6), (12, 24)):
+        cols = st.columns(2)
+        for col, window in zip(cols, row_windows):
+            with col:
+                val = averages.get(window, 0)
+                delta_text, delta_color = format_target_delta(
+                    val, target_amount, zero_text="On target"
+                )
+                st.metric(
+                    label=f"📊 Last {window} Months {unit}",
+                    value=format_currency(val),
+                    delta=delta_text,
+                    delta_color=delta_color,
+                    help=f"Average monthly amount over the last {window} months",
+                )
+
+
 def _prepare_unified_plot_data(
-    name, transactions_df, budget_df, global_month_range, categories_data, plot_type
+    name, transactions_df, budget_df, categories_data, plot_type
 ):
     """Filter data and calculate summary metrics for unified plot"""
     if plot_type == "category_group":
@@ -1034,7 +1092,6 @@ def _prepare_unified_plot_data(
             for cat in categories_data
             if cat["group"] == name and cat.get("target_amount") is not None
         )
-        avg_12_months = calculate_category_group_averages(name, transactions_df, 12)
         available_budget = calculate_category_group_available_budget(name, budget_df)
     else:
         filtered_transactions = transactions_df[
@@ -1048,26 +1105,16 @@ def _prepare_unified_plot_data(
             ),
             None,
         )
-        avg_12_months = calculate_category_averages(
-            name, transactions_df, 12, global_month_range
-        )
         available_budget = calculate_category_available_budget(name, budget_df)
 
     if filtered_transactions.empty:
         return None
 
-    return filtered_transactions, target_amount, avg_12_months, available_budget
+    averages = calculate_entity_window_averages(plot_type, name, transactions_df)
+    return filtered_transactions, target_amount, averages, available_budget
 
 
-def _render_unified_plot_metrics(
-    name,
-    transactions_df,
-    global_month_range,
-    plot_type,
-    target_amount,
-    avg_12_months,
-    available_budget,
-):
+def _render_unified_plot_metrics(target_amount, averages, available_budget):
     """Render Streamlit metrics for a unified category or category group plot"""
     col1, col2 = st.columns(2)
     with col1:
@@ -1083,42 +1130,7 @@ def _render_unified_plot_metrics(
             value=format_currency(available_budget),
         )
 
-    col3, col4 = st.columns(2)
-    with col3:
-        delta_text_12m, delta_color_12m = format_target_delta(
-            avg_12_months, target_amount, zero_text="On target"
-        )
-        st.metric(
-            label="📊 Last 12 Months Avg",
-            value=format_currency(avg_12_months),
-            delta=delta_text_12m,
-            delta_color=delta_color_12m,
-        )
-
-    with col4:
-        suggested_budget = -(available_budget - (avg_12_months * 12)) / 12
-        delta_text, delta_color = format_target_delta(suggested_budget, target_amount)
-        st.metric(
-            label="💡 Suggested Budget",
-            value=format_currency(suggested_budget),
-            delta=delta_text,
-            delta_color=delta_color,
-        )
-
-    ma_window = get_moving_average_window()
-    last_ma_avg = (
-        calculate_category_group_averages(name, transactions_df, ma_window)
-        if plot_type == "category_group"
-        else calculate_category_averages(
-            name, transactions_df, ma_window, global_month_range
-        )
-    )
-    ma_metric_label, ma_metric_help = moving_average_metric_label(ma_window, short=True)
-    st.metric(
-        label=ma_metric_label,
-        value=format_currency(last_ma_avg),
-        help=ma_metric_help,
-    )
+    render_average_metrics_grid(averages, target_amount=target_amount, short=True)
 
 
 def _add_unified_plot_traces(
@@ -1158,22 +1170,14 @@ def create_unified_plot(
 ):
     """Create comprehensive plot for either a category group or individual category."""
     prepared = _prepare_unified_plot_data(
-        name, transactions_df, budget_df, global_month_range, categories_data, plot_type
+        name, transactions_df, budget_df, categories_data, plot_type
     )
     if prepared is None:
         return None
 
-    filtered_transactions, target_amount, avg_12_months, available_budget = prepared
+    filtered_transactions, target_amount, averages, available_budget = prepared
 
-    _render_unified_plot_metrics(
-        name,
-        transactions_df,
-        global_month_range,
-        plot_type,
-        target_amount,
-        avg_12_months,
-        available_budget,
-    )
+    _render_unified_plot_metrics(target_amount, averages, available_budget)
 
     monthly_series = _group_monthly_amounts(filtered_transactions)
     monthly_expenses = monthly_series.reset_index()

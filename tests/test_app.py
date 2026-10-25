@@ -243,5 +243,38 @@ def test_overview_monthly_totals_and_presets():
     )
 
 
+def test_multi_window_averages():
+    """Test 3/6/12/24 month averages calculation across full history."""
+    from mynab.utils import (
+        AVERAGE_WINDOWS,
+        calculate_entity_window_averages,
+        calculate_series_window_averages,
+    )
+
+    assert AVERAGE_WINDOWS == (3, 6, 12, 24)
+
+    series = pd.Series(list(range(1, 25)), dtype=float)
+    avgs = calculate_series_window_averages(series)
+    assert avgs[3] == pytest.approx(23.0)
+    assert avgs[6] == pytest.approx(21.5)
+    assert avgs[12] == pytest.approx(18.5)
+    assert avgs[24] == pytest.approx(12.5)
+
+    months = pd.date_range("2024-01-01", periods=24, freq="MS")
+    df = pd.DataFrame(
+        [
+            {
+                "date": m.strftime("%Y-%m-%d"),
+                "amount": -float(i + 1),
+                "category": "Groceries",
+                "category_group": "Necessidades",
+            }
+            for i, m in enumerate(months)
+        ]
+    )
+    entity_avgs = calculate_entity_window_averages("category", "Groceries", df)
+    assert entity_avgs == avgs
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
