@@ -64,7 +64,7 @@ dev = [
 extend-select = ["C90", "ANN"]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 10
+max-complexity = 5
 
 [tool.ty.rules]
 all = "error"

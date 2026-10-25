@@ -880,6 +880,16 @@ def _resolve_unfiltered_transactions(
     return fallback_df
 
 
+def _resolve_entity_month_index(
+    transactions_df: pd.DataFrame,
+    global_month_range: pd.DatetimeIndex | None = None,
+) -> pd.PeriodIndex | None:
+    """Resolve the monthly PeriodIndex for reindexing entity expenses."""
+    if global_month_range is not None and len(global_month_range) > 0:
+        return pd.PeriodIndex(global_month_range.strftime("%Y-%m"), freq="M")
+    return get_full_month_period_index(transactions_df)
+
+
 def _build_entity_monthly_expenses(
     column: str,
     name: str,
@@ -891,20 +901,11 @@ def _build_entity_monthly_expenses(
         return None
 
     entity_tx = transactions_df[transactions_df[column] == name]
-    if entity_tx.empty:
-        return None
-
     monthly_expenses = _group_monthly_amounts(entity_tx)
     if monthly_expenses.empty:
         return None
 
-    if global_month_range is not None and len(global_month_range) > 0:
-        month_index: pd.PeriodIndex | None = pd.PeriodIndex(
-            global_month_range.strftime("%Y-%m"), freq="M"
-        )
-    else:
-        month_index = get_full_month_period_index(transactions_df)
-
+    month_index = _resolve_entity_month_index(transactions_df, global_month_range)
     if month_index is not None and len(month_index) > 0:
         monthly_expenses = monthly_expenses.reindex(month_index, fill_value=0)
     return monthly_expenses
@@ -1259,7 +1260,7 @@ def format_target_delta(
     if delta == 0 and zero_text is not None:
         return zero_text, "inverse"
     delta_pct = (delta / target_amount) * 100
-    return f"{delta_pct:+.1f}%", "inverse"
+    return f"{delta_pct:+.0f}%", "inverse"
 
 
 def build_complete_monthly_df(

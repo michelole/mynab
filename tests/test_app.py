@@ -264,8 +264,8 @@ def test_overview_monthly_totals_and_presets() -> None:
     assert exp.iloc[0] == pytest.approx(1200.0)
     assert net.iloc[0] == pytest.approx(1800.0)
 
-    delta_text, delta_color = format_target_delta(110.0, 100.0)
-    assert delta_text == "+10.0%"
+    delta_text, delta_color = format_target_delta(110.7, 100.0)
+    assert delta_text == "+11%"
     assert delta_color == "inverse"
     assert format_target_delta(100.0, 100.0, zero_text="On target") == (
         "On target",
