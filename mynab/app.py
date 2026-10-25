@@ -1,4 +1,5 @@
 import os
+
 import streamlit as st
 
 import config
@@ -246,7 +247,7 @@ def _setup_category_filters_section():
 
     excluded_groups = set(get_excluded_groups())
     category_group_names = sorted(
-        group for group in category_groups.keys() if group not in excluded_groups
+        group for group in category_groups if group not in excluded_groups
     )
 
     selected_category_groups = _multiselect_with_fallback(

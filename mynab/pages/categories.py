@@ -1,5 +1,7 @@
 import streamlit as st
+
 from mynab.utils import (
+    _group_monthly_amounts,
     calculate_global_y_range,
     calculate_series_window_averages,
     create_unified_plot,
@@ -11,7 +13,6 @@ from mynab.utils import (
     render_average_metrics_grid,
     render_in_grid,
     render_page_header,
-    _group_monthly_amounts,
 )
 
 

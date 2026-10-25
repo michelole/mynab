@@ -3,6 +3,7 @@ Configuration file for YNAB Budget Dashboard
 """
 
 import os
+
 from dotenv import load_dotenv
 
 # Load environment variables

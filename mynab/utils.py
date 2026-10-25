@@ -1,12 +1,14 @@
 from datetime import date, datetime, timedelta
-import streamlit as st
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
-from ynab.configuration import Configuration
-from ynab.api_client import ApiClient
-from ynab.api import PlansApi, CategoriesApi, TransactionsApi, MonthsApi, AccountsApi
+import streamlit as st
 from dotenv import load_dotenv
+from ynab.api import AccountsApi, CategoriesApi, MonthsApi, PlansApi, TransactionsApi
+from ynab.api_client import ApiClient
+from ynab.configuration import Configuration
+from ynab.exceptions import OpenApiException
 
 import config
 
@@ -127,14 +129,19 @@ def get_ynab_data(access_token):
                 accounts_list,
             )
 
-    except Exception as e:
-        st.error(f"Error connecting to YNAB API: {str(e)}")
+    except (OpenApiException, OSError, ValueError, TypeError) as e:
+        st.error(f"Error connecting to YNAB API: {e!s}")
         return None, None, None, None, None, None
 
 
 def _build_category_dict(category, group_name, group_id):
     """Extract a structured dictionary from a YNAB category model."""
     goal_target = getattr(category, "goal_target", None)
+    target_date = (
+        getattr(category, "goal_target_date", None)
+        or getattr(category, "goal_target_month", None)
+        or None
+    )
     return {
         "id": category.id,
         "name": category.name,
@@ -142,7 +149,7 @@ def _build_category_dict(category, group_name, group_id):
         "category_group_id": group_id,
         "target_amount": (goal_target / 1000) if goal_target else None,
         "target_type": getattr(category, "goal_type", None) or None,
-        "target_date": getattr(category, "goal_target_month", None) or None,
+        "target_date": target_date,
     }
 
 
@@ -412,7 +419,7 @@ def resolve_selected_category_groups(selected_category_groups=None):
         return selected_category_groups
     excluded_groups = set(get_excluded_groups())
     category_groups = st.session_state.get("category_groups") or {}
-    return sorted(g for g in category_groups.keys() if g not in excluded_groups)
+    return sorted(g for g in category_groups if g not in excluded_groups)
 
 
 def filter_transactions_by_selection(
@@ -742,7 +749,7 @@ def safe_strftime(dt):
         if pd.isna(dt):
             return "N/A"
         return dt.strftime("%Y-%m") if hasattr(dt, "strftime") else str(dt)
-    except Exception:
+    except (ValueError, TypeError, AttributeError):
         return str(dt)
 
 
@@ -968,7 +975,7 @@ def add_moving_average_trace(fig, months_to_plot, ma_plot, ma_window=None):
             x=months_to_plot,
             y=ma_plot,
             name=ma_label,
-            line=dict(color="#1f77b4", width=2, dash="dot"),
+            line={"color": "#1f77b4", "width": 2, "dash": "dot"},
             mode="lines",
             hovertemplate=f"<b>%{{x}}</b><br>{ma_label}: %{{customdata}}<br><extra></extra>",
             customdata=[format_currency(v) if v is not None else "€0" for v in ma_plot],
@@ -994,7 +1001,7 @@ def add_forecast_traces(
             x=months_series,
             y=trend_line,
             name=trend_name,
-            line=dict(color="#d62728", width=2),
+            line={"color": "#d62728", "width": 2},
             mode="lines",
             hovertemplate=f"<b>%{{x}}</b><br>{trend_name}: %{{customdata}}<br><extra></extra>",
             customdata=[format_currency(val) for val in trend_line],
@@ -1013,7 +1020,7 @@ def add_forecast_traces(
             x=future_months.strftime("%Y-%m"),
             y=forecast_values,
             name="Forecast (Next 3 Months)",
-            line=dict(color="#d62728", width=2, dash="dash"),
+            line={"color": "#d62728", "width": 2, "dash": "dash"},
             mode="lines",
             hovertemplate="<b>%{x}</b><br>Forecast: %{customdata}<br><extra></extra>",
             customdata=[format_currency(val) for val in forecast_values],
@@ -1035,7 +1042,7 @@ def add_target_goal_trace(fig, base_months, future_months, target_amount):
             x=all_months,
             y=[target_amount] * len(all_months),
             name=f"Target Goal ({formatted_target})",
-            line=dict(color="#2ca02c", width=3, dash="solid"),
+            line={"color": "#2ca02c", "width": 3, "dash": "solid"},
             mode="lines",
             hovertemplate="<b>%{x}</b><br>Target Goal: %{customdata}<br><extra></extra>",
             customdata=[formatted_target] * len(all_months),

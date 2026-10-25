@@ -1,5 +1,6 @@
-import streamlit as st
 import plotly.graph_objects as go
+import streamlit as st
+
 from mynab.utils import (
     add_bar_trace,
     add_forecast_traces,

@@ -1,4 +1,5 @@
 import streamlit as st
+
 from mynab.utils import (
     filter_budget_by_selection,
     render_page_header,

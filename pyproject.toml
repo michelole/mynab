@@ -24,13 +24,13 @@ classifiers = [
 ]
 
 dependencies = [
-    "streamlit>=1.66.1",
-    "ynab>=4.1.0",
-    "pandas>=2.3.0",
-    "plotly>=6.0.0",
-    "numpy>=2.0.0",
-    "python-dotenv>=1.0.0",
-    "watchdog>=6.0.0",
+    "streamlit~=1.66.1",
+    "ynab~=4.4.1",
+    "pandas~=3.1.0",
+    "plotly~=7.1.0",
+    "numpy~=2.5.4",
+    "python-dotenv~=1.2.4",
+    "watchdog~=6.0.0",
 ]
 
 [project.scripts]
@@ -55,9 +55,9 @@ addopts = "-v --tb=short"
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.0",
-    "ruff>=0.15.0",
-    "ty>=0.0.40",
+    "pytest~=9.1.1",
+    "ruff~=0.17.2",
+    "ty~=0.0.91",
 ]
 
 [tool.ruff.lint]
