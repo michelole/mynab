@@ -1,7 +1,11 @@
+from collections.abc import Sequence
+
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from mynab.utils import (
+    CategoryInfo,
     add_bar_trace,
     add_forecast_traces,
     add_moving_average_trace,
@@ -25,7 +29,7 @@ from mynab.utils import (
     resolve_selected_category_groups,
 )
 
-OVERVIEW_COLORS = {
+OVERVIEW_COLORS: dict[str, str] = {
     "total_income": "#2ca02c",
     "total_expense": "#ff7f0e",
     "total_net_income": "#1f77b4",
@@ -33,13 +37,13 @@ OVERVIEW_COLORS = {
 
 
 def create_category_group_plot(
-    group_name,
-    transactions_df,
-    budget_df,
-    month_range,
-    categories_data,
-    y_range=None,
-):
+    group_name: str,
+    transactions_df: pd.DataFrame,
+    budget_df: pd.DataFrame | None,
+    month_range: pd.DatetimeIndex,
+    categories_data: Sequence[CategoryInfo] | None,
+    y_range: Sequence[float] | None = None,
+) -> go.Figure | None:
     """Create comprehensive plot for a single category group"""
     return create_unified_plot(
         group_name,
@@ -52,7 +56,9 @@ def create_category_group_plot(
     )
 
 
-def _filter_and_aggregate_overview_data(data_type, transactions_df):
+def _filter_and_aggregate_overview_data(
+    data_type: str, transactions_df: pd.DataFrame
+) -> tuple[pd.DataFrame | None, str]:
     """Filter transactions by overview data type and aggregate by month"""
     color = OVERVIEW_COLORS.get(data_type, "#1f77b4")
     monthly_series = compute_overview_monthly_totals(
@@ -67,7 +73,9 @@ def _filter_and_aggregate_overview_data(data_type, transactions_df):
     return monthly_data, color
 
 
-def _add_overview_forecast_traces(fig, complete_monthly_data, data_type):
+def _add_overview_forecast_traces(
+    fig: go.Figure, complete_monthly_data: pd.DataFrame, data_type: str
+) -> pd.DatetimeIndex | None:
     """Add forecast trend line and 3-month extension to overview figure"""
     if len(complete_monthly_data) < 3:
         return None
@@ -77,7 +85,7 @@ def _add_overview_forecast_traces(fig, complete_monthly_data, data_type):
         return None
 
     is_expense = data_type == "total_expense"
-    values = abs(actual_data["amount"]) if is_expense else actual_data["amount"]
+    values = actual_data["amount"].abs() if is_expense else actual_data["amount"]
     return add_forecast_traces(
         fig,
         actual_data["month"],
@@ -88,13 +96,13 @@ def _add_overview_forecast_traces(fig, complete_monthly_data, data_type):
 
 
 def create_comprehensive_plot(
-    data_type,
-    transactions_df,
-    budget_df,
-    global_month_range,
-    y_range=None,
-    target_goal=None,
-):
+    data_type: str,
+    transactions_df: pd.DataFrame,
+    budget_df: pd.DataFrame | None,
+    global_month_range: pd.DatetimeIndex,
+    y_range: Sequence[float] | None = None,
+    target_goal: float | None = None,
+) -> go.Figure | None:
     """Create comprehensive plot for total income, total expense, or total net income"""
     monthly_data, color = _filter_and_aggregate_overview_data(
         data_type, transactions_df
@@ -103,9 +111,11 @@ def create_comprehensive_plot(
         return None
 
     complete_monthly_data = build_complete_monthly_df(global_month_range, monthly_data)
-    months_to_plot = complete_monthly_data["month"].tolist()
+    months_to_plot: list[str] = [
+        str(m) for m in complete_monthly_data["month"].tolist()
+    ]
     y_values = (
-        abs(complete_monthly_data["amount"])
+        complete_monthly_data["amount"].abs()
         if data_type == "total_expense"
         else complete_monthly_data["amount"]
     )
@@ -135,18 +145,20 @@ def create_comprehensive_plot(
     return apply_standard_plot_layout(fig, height=500, y_range=y_range)
 
 
-def _mean_or_zero(series):
+def _mean_or_zero(series: pd.Series) -> float:
     """Return the mean of a Series, or 0 if empty."""
     return float(series.mean()) if not series.empty else 0.0
 
 
-def _render_overview_summary_metrics(filtered_transactions_df):
+def _render_overview_summary_metrics(
+    filtered_transactions_df: pd.DataFrame,
+) -> None:
     """Render total and monthly-average summary metrics for the overview page."""
     income_tx = filter_income_transactions(filtered_transactions_df)
     expense_tx = filter_categorized_expense_transactions(filtered_transactions_df)
 
-    total_income = income_tx["amount"].sum() if not income_tx.empty else 0.0
-    total_expenses = expense_tx["amount"].sum() if not expense_tx.empty else 0.0
+    total_income = float(income_tx["amount"].sum()) if not income_tx.empty else 0.0
+    total_expenses = float(expense_tx["amount"].sum()) if not expense_tx.empty else 0.0
     total_net_income = total_income + total_expenses
 
     col1, col2, col3 = st.columns(3)
@@ -179,13 +191,13 @@ def _render_overview_summary_metrics(filtered_transactions_df):
 
 
 def _render_overview_charts_row(
-    filtered_transactions_df,
-    budget_df,
-    global_month_range,
-    overview_y_range,
-    categories_data,
-    selected_category_groups,
-):
+    filtered_transactions_df: pd.DataFrame,
+    budget_df: pd.DataFrame | None,
+    global_month_range: pd.DatetimeIndex,
+    overview_y_range: Sequence[float] | None,
+    categories_data: Sequence[CategoryInfo] | None,
+    selected_category_groups: Sequence[str],
+) -> None:
     """Render the 3 main overview charts (Total Income, Total Expenses, Net Income)."""
     st.header("📊 Overview Analysis")
     col1, col2, col3 = st.columns(3)
@@ -206,10 +218,13 @@ def _render_overview_charts_row(
 
     with col2:
         st.subheader("💸 Total Expenses")
-        total_target_goal = sum(
-            cat.get("target_amount") or 0
-            for cat in (categories_data or [])
-            if cat["group"] in selected_category_groups and cat.get("target_amount")
+        total_target_goal = float(
+            sum(
+                amt
+                for cat in (categories_data or [])
+                if cat["group"] in selected_category_groups
+                and (amt := cat.get("target_amount")) is not None
+            )
         )
         expense_fig = create_comprehensive_plot(
             "total_expense",
@@ -240,13 +255,13 @@ def _render_overview_charts_row(
 
 
 def _render_single_group_card(
-    group_name,
-    filtered_transactions_df,
-    budget_df,
-    global_month_range,
-    categories_data,
-    category_group_y_range,
-):
+    group_name: str,
+    filtered_transactions_df: pd.DataFrame,
+    budget_df: pd.DataFrame | None,
+    global_month_range: pd.DatetimeIndex,
+    categories_data: Sequence[CategoryInfo] | None,
+    category_group_y_range: Sequence[float] | None,
+) -> None:
     """Render subheader and plot for a single category group."""
     st.subheader(group_name)
     group_fig = create_category_group_plot(
@@ -264,8 +279,11 @@ def _render_single_group_card(
 
 
 def _compute_overview_y_ranges(
-    filtered_transactions_df, budget_df, categories_data, selected_category_groups
-):
+    filtered_transactions_df: pd.DataFrame,
+    budget_df: pd.DataFrame | None,
+    categories_data: Sequence[CategoryInfo] | None,
+    selected_category_groups: Sequence[str],
+) -> tuple[list[float] | None, list[float] | None]:
     """Calculate global y-axis ranges for overview and category-group plots when enabled."""
     if not st.session_state.get("global_scale_enabled", False):
         return None, None
@@ -287,7 +305,7 @@ def _compute_overview_y_ranges(
     return overview_y_range, category_group_y_range
 
 
-def _validate_overview_session():
+def _validate_overview_session() -> bool:
     """Validate required session state for the overview page."""
     if not st.session_state.get("data_loaded", False):
         st.error("Data not loaded. Please go back to the main page.")
@@ -306,19 +324,22 @@ def _validate_overview_session():
     return True
 
 
-def main():
+def main() -> None:
     render_page_header("💰 YNAB Budget Dashboard")
 
     if not _validate_overview_session():
         return
 
-    start_date = st.session_state.get("start_date")
-    end_date = st.session_state.get("end_date")
+    start_date = st.session_state.start_date
+    end_date = st.session_state.end_date
     transactions_df = st.session_state.get("transactions_df")
     budget_df = st.session_state.get("budget_df")
     categories_data = st.session_state.get("categories_data")
     selected_category_groups = resolve_selected_category_groups()
-    selected_categories = st.session_state.get("selected_categories", [])
+    raw_categories = st.session_state.get("selected_categories")
+    selected_categories = (
+        [str(c) for c in raw_categories] if isinstance(raw_categories, list) else []
+    )
 
     filtered_transactions_df = filter_transactions_by_selection(
         transactions_df,

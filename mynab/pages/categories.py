@@ -1,6 +1,12 @@
+from collections.abc import Mapping, Sequence
+
+import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from mynab.utils import (
+    CategoryInfo,
+    DateLike,
     _group_monthly_amounts,
     calculate_global_y_range,
     calculate_series_window_averages,
@@ -17,13 +23,13 @@ from mynab.utils import (
 
 
 def create_category_plot(
-    category_name,
-    transactions_df,
-    budget_df,
-    global_month_range,
-    categories_data,
-    y_range=None,
-):
+    category_name: str,
+    transactions_df: pd.DataFrame,
+    budget_df: pd.DataFrame | None,
+    global_month_range: pd.DatetimeIndex,
+    categories_data: Sequence[CategoryInfo] | None,
+    y_range: Sequence[float] | None = None,
+) -> go.Figure | None:
     """Create comprehensive plot for a single category with enhanced metrics"""
     return create_unified_plot(
         category_name,
@@ -37,24 +43,28 @@ def create_category_plot(
 
 
 def calculate_summary_metrics(
-    categories_data,
-    budget_df,
-    transactions_df,
-    selected_category_groups,
-    selected_categories,
-):
+    categories_data: Sequence[CategoryInfo],
+    budget_df: pd.DataFrame,
+    transactions_df: pd.DataFrame,
+    selected_category_groups: Sequence[str],
+    selected_categories: Sequence[str],
+) -> tuple[float, float, dict[int, float]]:
     """Calculate summary metrics for all selected categories from full transaction history"""
-    total_target_budget = sum(
-        cat.get("target_amount") or 0
-        for cat in categories_data
-        if cat.get("target_amount") is not None
+    total_target_budget = float(
+        sum(
+            amt
+            for cat in categories_data
+            if (amt := cat.get("target_amount")) is not None
+        )
     )
-    total_available_budget = budget_df["available"].sum() if not budget_df.empty else 0
+    total_available_budget = (
+        float(budget_df["available"].sum()) if not budget_df.empty else 0.0
+    )
 
     tx = filter_transactions_by_selection(
         transactions_df, selected_category_groups, selected_categories
     )
-    monthly_totals = None
+    monthly_totals: pd.Series | None = None
     if not tx.empty:
         monthly_totals = _group_monthly_amounts(tx)
         full_months = get_full_month_period_index(transactions_df)
@@ -65,7 +75,11 @@ def calculate_summary_metrics(
     return total_target_budget, total_available_budget, averages
 
 
-def _render_summary_metrics(total_target, total_available, averages):
+def _render_summary_metrics(
+    total_target: float,
+    total_available: float,
+    averages: Mapping[int, float],
+) -> None:
     """Display summary metrics at the top of the categories page"""
     st.header("📊 Summary Metrics")
 
@@ -87,13 +101,13 @@ def _render_summary_metrics(total_target, total_available, averages):
 
 
 def _render_single_category_card(
-    category_name,
-    filtered_transactions_df,
-    budget_df,
-    global_month_range,
-    categories_data,
-    category_y_range,
-):
+    category_name: str,
+    filtered_transactions_df: pd.DataFrame,
+    budget_df: pd.DataFrame,
+    global_month_range: pd.DatetimeIndex,
+    categories_data: Sequence[CategoryInfo],
+    category_y_range: Sequence[float] | None,
+) -> None:
     """Render subheader and plot for a single category."""
     st.subheader(category_name)
     category_fig = create_category_plot(
@@ -111,15 +125,15 @@ def _render_single_category_card(
 
 
 def _render_category_groups(
-    filtered_categories_data,
-    filtered_transactions_df,
-    budget_df,
-    global_month_range,
-    categories_data,
-    category_y_range,
-):
+    filtered_categories_data: Sequence[CategoryInfo],
+    filtered_transactions_df: pd.DataFrame,
+    budget_df: pd.DataFrame,
+    global_month_range: pd.DatetimeIndex,
+    categories_data: Sequence[CategoryInfo],
+    category_y_range: Sequence[float] | None,
+) -> None:
     """Group and display plots for each category group"""
-    categories_by_group = {}
+    categories_by_group: dict[str, list[str]] = {}
     for cat in filtered_categories_data:
         categories_by_group.setdefault(cat["group"], []).append(cat["name"])
 
@@ -140,14 +154,14 @@ def _render_category_groups(
 
 
 def _filter_categories_page_data(
-    transactions_df,
-    budget_df,
-    categories_data,
-    start_date,
-    end_date,
-    selected_category_groups,
-    selected_categories,
-):
+    transactions_df: pd.DataFrame,
+    budget_df: pd.DataFrame,
+    categories_data: Sequence[CategoryInfo],
+    start_date: DateLike | None,
+    end_date: DateLike | None,
+    selected_category_groups: Sequence[str],
+    selected_categories: Sequence[str],
+) -> tuple[pd.DataFrame, pd.DataFrame, list[CategoryInfo]]:
     """Filter transactions, budget, and categories data for the categories page"""
     filtered_transactions_df = filter_transactions_by_selection(
         transactions_df,
@@ -168,7 +182,7 @@ def _filter_categories_page_data(
     return filtered_transactions_df, filtered_budget_df, filtered_categories_data
 
 
-def main():
+def main() -> None:
     render_page_header("📋 Individual Category Analysis")
 
     if not st.session_state.get("data_loaded", False):
@@ -186,7 +200,10 @@ def main():
         st.error("Data not available. Please go to the main page first.")
         return
 
-    selected_categories = st.session_state.get("selected_categories", [])
+    raw_categories = st.session_state.get("selected_categories")
+    selected_categories = (
+        [str(c) for c in raw_categories] if isinstance(raw_categories, list) else []
+    )
 
     filtered_transactions_df, budget_df, filtered_categories_data = (
         _filter_categories_page_data(
@@ -215,7 +232,7 @@ def main():
 
     _render_summary_metrics(total_target, total_available, averages)
 
-    category_y_range = None
+    category_y_range: list[float] | None = None
     if st.session_state.get("global_scale_enabled", False) and filtered_category_names:
         category_y_range = calculate_global_y_range(
             filtered_transactions_df,

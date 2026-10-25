@@ -1,8 +1,12 @@
+from collections.abc import Mapping, Sequence
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from mynab.utils import (
+    AccountInfo,
+    MovingAverageWindow,
     add_bar_trace,
     add_forecast_traces,
     add_moving_average_trace,
@@ -23,8 +27,12 @@ from mynab.utils import (
 
 
 def _add_account_ma_and_forecast_traces(
-    fig, complete_monthly_data, net_worth_full, months_to_plot, ma_window
-):
+    fig: go.Figure,
+    complete_monthly_data: pd.DataFrame,
+    net_worth_full: pd.Series,
+    months_to_plot: Sequence[str],
+    ma_window: MovingAverageWindow,
+) -> None:
     """Add moving average and forecast traces to an account plot if enough data exists."""
     if len(complete_monthly_data) < 3:
         return
@@ -32,7 +40,7 @@ def _add_account_ma_and_forecast_traces(
     if len(actual_data) < 3:
         return
 
-    ma_series = calculate_moving_average(abs(net_worth_full), window=ma_window)
+    ma_series = calculate_moving_average(net_worth_full.abs(), window=ma_window)
     ma_plot = map_moving_average_to_months(ma_series, months_to_plot)
     add_moving_average_trace(fig, months_to_plot, ma_plot, ma_window=ma_window)
 
@@ -40,20 +48,23 @@ def _add_account_ma_and_forecast_traces(
         fig,
         actual_data["month"],
         actual_data["month_date"],
-        abs(actual_data["net_worth"]),
+        actual_data["net_worth"].abs(),
         abs_forecast=True,
         trend_name="Forecast Trend",
     )
 
 
-def create_account_plot(account_name, global_month_range):
+def create_account_plot(
+    account_name: str, global_month_range: pd.DatetimeIndex
+) -> tuple[go.Figure, float, dict[int, float]] | None:
     """Create a plot for a single account showing available, forecast, and multi-window averages"""
-    end_period = pd.Period(global_month_range[-1].strftime("%Y-%m"), freq="M")
+    end_period_raw = pd.Period(global_month_range[-1].strftime("%Y-%m"), freq="M")
+    end_period = end_period_raw if isinstance(end_period_raw, pd.Period) else None
     net_worth_full = build_account_net_worth_series(account_name, end_period=end_period)
     if net_worth_full is None or net_worth_full.empty:
         return None
 
-    months_to_plot = global_month_range.strftime("%Y-%m").tolist()
+    months_to_plot: list[str] = [str(m) for m in global_month_range.strftime("%Y-%m")]
     complete_monthly_data = pd.DataFrame(
         {
             "month_date": global_month_range,
@@ -66,7 +77,7 @@ def create_account_plot(account_name, global_month_range):
 
     averages = calculate_series_window_averages(net_worth_full)
     ma_window = get_moving_average_window()
-    available = net_worth_full.iloc[-1]
+    available = float(net_worth_full.iloc[-1])
 
     fig = go.Figure()
     add_bar_trace(
@@ -84,7 +95,9 @@ def create_account_plot(account_name, global_month_range):
     return fig, available, averages
 
 
-def _render_account_card(account_name, global_month_range):
+def _render_account_card(
+    account_name: str, global_month_range: pd.DatetimeIndex
+) -> None:
     """Render metrics and chart for a single account"""
     st.subheader(account_name)
     result = create_account_plot(account_name, global_month_range)
@@ -101,9 +114,11 @@ def _render_account_card(account_name, global_month_range):
     st.plotly_chart(fig, width="stretch")
 
 
-def _group_accounts_by_type(accounts_list):
+def _group_accounts_by_type(
+    accounts_list: Sequence[AccountInfo],
+) -> dict[str, list[AccountInfo]]:
     """Filter non-credit accounts and group them by account type"""
-    accounts_by_type = {}
+    accounts_by_type: dict[str, list[AccountInfo]] = {}
     for acc in accounts_list:
         if acc["type"] in ("credit", "creditCard"):
             continue
@@ -112,7 +127,10 @@ def _group_accounts_by_type(accounts_list):
     return accounts_by_type
 
 
-def _render_account_type_sections(accounts_by_type, global_month_range):
+def _render_account_type_sections(
+    accounts_by_type: Mapping[str, Sequence[AccountInfo]],
+    global_month_range: pd.DatetimeIndex,
+) -> None:
     """Render each account type section and its grid of account cards."""
     for acc_type, accs in accounts_by_type.items():
         group_label = acc_type.title()
@@ -125,7 +143,7 @@ def _render_account_type_sections(accounts_by_type, global_month_range):
         )
 
 
-def main():
+def main() -> None:
     render_page_header("🏦 Account Analysis")
 
     if not st.session_state.get("data_loaded", False):
@@ -133,7 +151,8 @@ def main():
         return
 
     transactions_df = st.session_state.transactions_df
-    accounts_list = st.session_state.get("accounts_list", [])
+    raw_accounts = st.session_state.get("accounts_list")
+    accounts_list = raw_accounts if isinstance(raw_accounts, list) else []
     if transactions_df is None or not accounts_list:
         st.error("Data not available. Please go to the main page first.")
         return

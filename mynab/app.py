@@ -1,4 +1,6 @@
 import os
+from collections.abc import Mapping, Sequence
+from datetime import date
 
 import streamlit as st
 
@@ -8,6 +10,7 @@ from mynab.utils import (
     DEFAULT_MOVING_AVERAGE_WINDOW,
     MONTH_RANGE_PRESET_OPTIONS,
     MOVING_AVERAGE_WINDOW_OPTIONS,
+    CategoryInfo,
     clamp_month_range,
     dates_from_month_selection,
     format_month_option,
@@ -30,9 +33,9 @@ st.set_page_config(page_title="YNAB Budget Dashboard", page_icon="💰", layout=
 inject_custom_css()
 
 
-def initialize_session_state():
+def initialize_session_state() -> None:
     """Initialize session state variables"""
-    defaults = {
+    defaults: dict[str, object] = {
         "data_loaded": False,
         "start_date": None,
         "end_date": None,
@@ -51,18 +54,18 @@ def initialize_session_state():
             st.session_state[key] = value
 
 
-def _get_api_token():
+def _get_api_token() -> str | None:
     """Retrieve YNAB API token from environment or config."""
     return os.getenv("YNAB_API_KEY") or config.YNAB_API_KEY
 
 
-def load_data():
+def load_data() -> bool:
     """Load and cache YNAB data"""
     if st.session_state.data_loaded:
         return True
 
     api_token = _get_api_token()
-    if not api_token:
+    if api_token is None or api_token == "":
         st.error("YNAB API key not found in environment variables.")
         st.info("""
         Please set your YNAB API key in the .env file:
@@ -82,7 +85,11 @@ def load_data():
             accounts_list,
         ) = get_ynab_data(api_token)
 
-    if not budget_id:
+    if (
+        budget_id is None
+        or categories_response is None
+        or transactions_response is None
+    ):
         return False
 
     categories_data, category_groups = process_categories_data(categories_response)
@@ -98,7 +105,9 @@ def load_data():
     return True
 
 
-def _resolve_custom_month_defaults(available_months):
+def _resolve_custom_month_defaults(
+    available_months: Sequence[date],
+) -> tuple[int, int]:
     """Determine initial start and end months for custom month selection."""
     default_start_raw, default_end_raw = get_default_month_range()
     default_start, default_end = clamp_month_range(
@@ -123,7 +132,7 @@ def _resolve_custom_month_defaults(available_months):
     return start_idx, end_idx
 
 
-def _render_custom_month_selectors(available_months):
+def _render_custom_month_selectors(available_months: Sequence[date]) -> bool:
     """Render start and end month selectboxes for Custom range preset."""
     month_labels = [format_month_option(m) for m in available_months]
     label_to_month = dict(zip(month_labels, available_months))
@@ -154,7 +163,7 @@ def _render_custom_month_selectors(available_months):
     return True
 
 
-def _setup_month_range_section():
+def _setup_month_range_section() -> bool:
     """Setup month range selection in sidebar"""
     st.header("📅 Month Range")
 
@@ -182,7 +191,7 @@ def _setup_month_range_section():
     return _render_custom_month_selectors(available_months)
 
 
-def _setup_plot_settings_section():
+def _setup_plot_settings_section() -> None:
     """Setup plot settings in sidebar"""
     st.header("📏 Plot Settings")
 
@@ -213,8 +222,12 @@ def _setup_plot_settings_section():
 
 
 def _multiselect_with_fallback(
-    label, options, current_selection, fallback_defaults, help_text
-):
+    label: str,
+    options: list[str],
+    current_selection: Sequence[str],
+    fallback_defaults: Sequence[str],
+    help_text: str,
+) -> list[str]:
     """Render a multiselect widget that falls back to all options when cleared."""
     valid_current = [item for item in current_selection if item in options]
     valid_defaults = [item for item in fallback_defaults if item in options]
@@ -227,7 +240,10 @@ def _multiselect_with_fallback(
     return selected or options
 
 
-def _get_categories_for_groups(category_groups, selected_groups):
+def _get_categories_for_groups(
+    category_groups: Mapping[str, Sequence[CategoryInfo]],
+    selected_groups: Sequence[str],
+) -> list[str]:
     """Collect sorted category names belonging to the selected category groups."""
     names = [
         cat["name"]
@@ -237,7 +253,7 @@ def _get_categories_for_groups(category_groups, selected_groups):
     return sorted(names)
 
 
-def _setup_category_filters_section():
+def _setup_category_filters_section() -> None:
     """Setup category group and category filters in sidebar"""
     st.header("📊 Category Groups")
 
@@ -272,7 +288,7 @@ def _setup_category_filters_section():
     )
 
 
-def setup_sidebar():
+def setup_sidebar() -> bool:
     """Setup sidebar with filters"""
     with st.sidebar:
         if not _setup_month_range_section():
@@ -283,7 +299,7 @@ def setup_sidebar():
     return True
 
 
-def main():
+def main() -> None:
     """Main application function"""
     initialize_session_state()
 

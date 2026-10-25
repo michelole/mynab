@@ -5,7 +5,7 @@ from mynab.utils import (
     render_page_header,
 )
 
-DISPLAY_COLUMNS = [
+DISPLAY_COLUMNS: list[str] = [
     "date",
     "import_payee_name_original",
     "payee_name",
@@ -14,7 +14,7 @@ DISPLAY_COLUMNS = [
 ]
 
 
-def main():
+def main() -> None:
     render_page_header("📄 Transaction Data")
 
     if not st.session_state.get("data_loaded", False):
@@ -26,10 +26,14 @@ def main():
         st.error("Data not available. Please go to the main page first.")
         return
 
+    raw_categories = st.session_state.get("selected_categories")
+    selected_categories = (
+        [str(c) for c in raw_categories] if isinstance(raw_categories, list) else []
+    )
     filtered_transactions_df = filter_transactions_by_selection(
         transactions_df,
         st.session_state.selected_category_groups,
-        st.session_state.get("selected_categories", []),
+        selected_categories,
         start_date=st.session_state.start_date,
         end_date=st.session_state.end_date,
     )

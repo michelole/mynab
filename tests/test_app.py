@@ -1,12 +1,13 @@
 """Tests for the YNAB Budget Dashboard app."""
 
+from collections.abc import Sequence
 from datetime import date
 
 import pandas as pd
 import pytest
 
 
-def test_calculate_moving_average():
+def test_calculate_moving_average() -> None:
     """Test moving average calculation."""
     from mynab.utils import calculate_moving_average
 
@@ -20,7 +21,7 @@ def test_calculate_moving_average():
     pd.testing.assert_series_equal(result, expected, check_dtype=False)
 
 
-def test_calculate_weighted_moving_average():
+def test_calculate_weighted_moving_average() -> None:
     """Test 12-month weighted moving average calculation."""
     from mynab.utils import (
         DEFAULT_MOVING_AVERAGE_WINDOW,
@@ -47,7 +48,7 @@ def test_calculate_weighted_moving_average():
     )
 
 
-def test_calculate_forecast_trend():
+def test_calculate_forecast_trend() -> None:
     """Test forecast trend calculation."""
     from mynab.utils import calculate_forecast_trend
 
@@ -67,7 +68,7 @@ def test_calculate_forecast_trend():
     assert not trend_line.isna().all()
 
 
-def test_process_categories_data():
+def test_process_categories_data() -> None:
     """Test categories data processing."""
     from mynab.utils import process_categories_data
 
@@ -75,13 +76,13 @@ def test_process_categories_data():
     class MockCategory:
         def __init__(
             self,
-            id,
-            name,
-            hidden=False,
-            deleted=False,
-            goal_target=None,
-            goal_target_date=None,
-        ):
+            id: str,
+            name: str,
+            hidden: bool = False,
+            deleted: bool = False,
+            goal_target: int | None = None,
+            goal_target_date: date | None = None,
+        ) -> None:
             self.id = id
             self.name = name
             self.hidden = hidden
@@ -90,14 +91,20 @@ def test_process_categories_data():
             self.goal_target_date = goal_target_date
 
     class MockCategoryGroup:
-        def __init__(self, id, name, categories):
+        def __init__(
+            self, id: str, name: str, categories: Sequence[MockCategory]
+        ) -> None:
             self.id = id
             self.name = name
             self.categories = categories
 
+    class MockCategoriesData:
+        def __init__(self, category_groups: Sequence[MockCategoryGroup]) -> None:
+            self.category_groups = category_groups
+
     class MockCategoriesResponse:
-        def __init__(self, category_groups):
-            self.data = type("Data", (), {"category_groups": category_groups})()
+        def __init__(self, category_groups: Sequence[MockCategoryGroup]) -> None:
+            self.data = MockCategoriesData(category_groups)
 
     # Create mock data
     categories = [
@@ -128,8 +135,8 @@ def test_process_categories_data():
     assert "Internal Master Category" not in category_groups
     assert any(
         cat["name"] == "Food"
-        and cat["target_amount"] == 250.0
-        and cat["target_date"] == date(2026, 12, 1)
+        and cat.get("target_amount") == 250.0
+        and cat.get("target_date") == date(2026, 12, 1)
         for cat in categories_data
     )
     assert any(cat["name"] == "Transport" for cat in categories_data)
@@ -137,12 +144,18 @@ def test_process_categories_data():
     assert not any(cat["name"] == "Deleted" for cat in categories_data)
 
 
-def test_process_transactions_data():
+def test_process_transactions_data() -> None:
     """Test transactions data processing including split subtransactions."""
-    from mynab.utils import process_transactions_data
+    from mynab.utils import CategoryInfo, process_transactions_data
 
     class MockSubTransaction:
-        def __init__(self, amount, category_id, category_name, memo=None):
+        def __init__(
+            self,
+            amount: int,
+            category_id: str,
+            category_name: str,
+            memo: str | None = None,
+        ) -> None:
             self.amount = amount
             self.category_id = category_id
             self.category_name = category_name
@@ -151,15 +164,15 @@ def test_process_transactions_data():
     class MockTransaction:
         def __init__(
             self,
-            date,
-            amount,
-            category_id=None,
-            category_name=None,
-            payee_name=None,
-            memo=None,
-            id=None,
-            subtransactions=None,
-        ):
+            date: str,
+            amount: int,
+            category_id: str | None = None,
+            category_name: str | None = None,
+            payee_name: str | None = None,
+            memo: str | None = None,
+            id: str | None = None,
+            subtransactions: Sequence[MockSubTransaction] | None = None,
+        ) -> None:
             self.date = date
             self.amount = amount
             self.category_id = category_id
@@ -169,9 +182,13 @@ def test_process_transactions_data():
             self.id = id or "txn1"
             self.subtransactions = subtransactions
 
+    class MockTransactionsData:
+        def __init__(self, transactions: Sequence[MockTransaction]) -> None:
+            self.transactions = transactions
+
     class MockTransactionsResponse:
-        def __init__(self, transactions):
-            self.data = type("Data", (), {"transactions": transactions})()
+        def __init__(self, transactions: Sequence[MockTransaction]) -> None:
+            self.data = MockTransactionsData(transactions)
 
     transactions = [
         MockTransaction(
@@ -195,7 +212,7 @@ def test_process_transactions_data():
     ]
 
     response = MockTransactionsResponse(transactions)
-    categories_data = [
+    categories_data: list[CategoryInfo] = [
         {"id": "cat1", "name": "Food", "group": "Living Expenses"},
         {"id": "cat2", "name": "Transport", "group": "Living Expenses"},
     ]
@@ -212,7 +229,7 @@ def test_process_transactions_data():
     assert df.iloc[4]["memo"] == "Parent memo"
 
 
-def test_overview_monthly_totals_and_presets():
+def test_overview_monthly_totals_and_presets() -> None:
     """Test overview monthly aggregation, target delta formatting, and month range presets."""
     from mynab.utils import (
         compute_overview_monthly_totals,
@@ -262,7 +279,7 @@ def test_overview_monthly_totals_and_presets():
     )
 
 
-def test_multi_window_averages():
+def test_multi_window_averages() -> None:
     """Test 3/6/12/24 month averages calculation across full history."""
     from mynab.utils import (
         AVERAGE_WINDOWS,
@@ -295,7 +312,7 @@ def test_multi_window_averages():
     assert entity_avgs == avgs
 
 
-def test_ynab_sdk_models_integration():
+def test_ynab_sdk_models_integration() -> None:
     """Test processing functions against real ynab SDK models."""
     from uuid import uuid4
 
@@ -359,8 +376,8 @@ def test_ynab_sdk_models_integration():
     categories_data, category_groups = process_categories_data(categories_resp)
     assert len(categories_data) == 1
     assert categories_data[0]["name"] == "Groceries"
-    assert categories_data[0]["target_amount"] == 300.0
-    assert categories_data[0]["target_date"] == date(2026, 10, 31)
+    assert categories_data[0].get("target_amount") == 300.0
+    assert categories_data[0].get("target_date") == date(2026, 10, 31)
     assert "Living" in category_groups
 
     tx = TransactionDetail(

@@ -21,7 +21,7 @@ lint: ## Run linting with ruff
 	uv run ruff check .
 
 type-check: ## Run type checking with ty
-	uv run ty check
+	uv run ty check --error-on-warning
 
 test: ## Run tests
 	uv run pytest

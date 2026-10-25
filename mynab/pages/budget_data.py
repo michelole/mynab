@@ -6,7 +6,7 @@ from mynab.utils import (
 )
 
 
-def main():
+def main() -> None:
     render_page_header("💰 Budget Data")
 
     if not st.session_state.get("data_loaded", False):
@@ -19,12 +19,15 @@ def main():
         return
 
     selected_category_groups = st.session_state.selected_category_groups
-    selected_categories = st.session_state.get("selected_categories", [])
+    raw_categories = st.session_state.get("selected_categories")
+    selected_categories = (
+        [str(c) for c in raw_categories] if isinstance(raw_categories, list) else []
+    )
     budget_df = filter_budget_by_selection(
         budget_df, selected_category_groups, selected_categories
     )
 
-    if budget_df is not None and not budget_df.empty:
+    if not budget_df.empty:
         st.dataframe(budget_df, width="stretch", height=600)
     else:
         st.info("No budget data available - using transaction data for analysis")
