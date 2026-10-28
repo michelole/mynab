@@ -1,5 +1,6 @@
 import streamlit as st
 
+from mynab.app import ensure_data_loaded
 from mynab.charts import render_page_header
 from mynab.transforms import filter_budget_by_selection
 
@@ -7,8 +8,7 @@ from mynab.transforms import filter_budget_by_selection
 def main() -> None:
     render_page_header("💰 Budget Data")
 
-    if not st.session_state.get("data_loaded", False):
-        st.error("Data not loaded. Please go to the main page first.")
+    if not ensure_data_loaded():
         return
 
     budget_df = st.session_state.budget_df

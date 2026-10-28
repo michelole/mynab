@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from mynab.app import ensure_data_loaded
 from mynab.charts import (
     add_bar_trace,
     add_forecast_traces,
@@ -147,8 +148,7 @@ def _render_account_type_sections(
 def main() -> None:
     render_page_header("🏦 Account Analysis")
 
-    if not st.session_state.get("data_loaded", False):
-        st.error("Data not loaded. Please go to the main page first.")
+    if not ensure_data_loaded():
         return
 
     transactions_df = st.session_state.transactions_df

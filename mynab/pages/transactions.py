@@ -1,5 +1,6 @@
 import streamlit as st
 
+from mynab.app import ensure_data_loaded
 from mynab.charts import render_page_header
 from mynab.transforms import filter_transactions_by_selection
 
@@ -15,8 +16,7 @@ DISPLAY_COLUMNS: list[str] = [
 def main() -> None:
     render_page_header("📄 Transaction Data")
 
-    if not st.session_state.get("data_loaded", False):
-        st.error("Data not loaded. Please go to the main page first.")
+    if not ensure_data_loaded():
         return
 
     transactions_df = st.session_state.transactions_df

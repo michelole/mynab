@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from mynab.app import ensure_data_loaded
 from mynab.charts import (
     add_bar_trace,
     add_forecast_traces,
@@ -298,8 +299,7 @@ def _compute_overview_y_ranges(
 
 def _validate_overview_session() -> bool:
     """Validate required session state for the overview page."""
-    if not st.session_state.get("data_loaded", False):
-        st.error("Data not loaded. Please go back to the main page.")
+    if not ensure_data_loaded():
         return False
     if st.session_state.get("start_date") is None or st.session_state.get("end_date") is None:
         st.error("Month range not set. Please configure the month range in the sidebar.")

@@ -3,6 +3,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 
 import streamlit as st
+from streamlit.runtime.pages_manager import PagesManager
 
 from mynab.api import (
     get_ynab_data,
@@ -32,9 +33,7 @@ from mynab.transforms import (
     resolve_month_range_preset,
 )
 
-# Page configuration
-st.set_page_config(page_title="YNAB Budget Dashboard", page_icon="💰", layout="wide")
-inject_custom_css()
+PagesManager.uses_pages_directory = False
 
 
 def initialize_session_state() -> None:
@@ -49,6 +48,7 @@ def initialize_session_state() -> None:
         "budget_df": None,
         "categories_data": None,
         "category_groups": None,
+        "accounts_list": None,
         "global_scale_enabled": True,
         "moving_average_window": DEFAULT_MOVING_AVERAGE_WINDOW,
         "month_range_preset": DEFAULT_MONTH_RANGE_PRESET,
@@ -63,8 +63,52 @@ def _get_api_token() -> str | None:
     return os.getenv("YNAB_API_KEY") or settings.ynab_api_key
 
 
+def _resolve_preset_dates(preset: object, available_months: Sequence[date]) -> tuple[date, date]:
+    """Compute inclusive start and end dates for the given preset."""
+    resolved = (
+        preset
+        if isinstance(preset, str) and preset in MONTH_RANGE_PRESET_OPTIONS
+        else DEFAULT_MONTH_RANGE_PRESET
+    )
+    if resolved == "Custom":
+        start_raw, end_raw = get_default_month_range()
+        start_month, end_month = clamp_month_range(start_raw, end_raw, available_months)
+    else:
+        start_month, end_month = resolve_month_range_preset(resolved, available_months)
+    return dates_from_month_selection(start_month, end_month)
+
+
+def _apply_initial_filter_defaults() -> None:
+    """Initialize default date range and category filters after loading data."""
+    if st.session_state.get("start_date") is None or st.session_state.get("end_date") is None:
+        available_months = list_available_months(st.session_state.transactions_df)
+        start_date, end_date = _resolve_preset_dates(
+            st.session_state.get("month_range_preset"), available_months
+        )
+        st.session_state.start_date = start_date
+        st.session_state.end_date = end_date
+
+    category_groups = st.session_state.get("category_groups")
+    if not isinstance(category_groups, Mapping):
+        return
+
+    if not st.session_state.get("selected_category_groups"):
+        excluded = set(get_excluded_groups())
+        all_groups = sorted(g for g in category_groups if g not in excluded)
+        default_groups = [g for g in get_default_category_groups() if g in all_groups]
+        st.session_state.selected_category_groups = default_groups or all_groups
+
+    if not st.session_state.get("selected_categories"):
+        available_cats = _get_categories_for_groups(
+            category_groups, st.session_state.selected_category_groups
+        )
+        default_cats = [c for c in get_default_categories() if c in available_cats]
+        st.session_state.selected_categories = default_cats or available_cats
+
+
 def load_data() -> bool:
     """Load and cache YNAB data"""
+    initialize_session_state()
     if st.session_state.data_loaded:
         return True
 
@@ -102,7 +146,13 @@ def load_data() -> bool:
     st.session_state.category_groups = category_groups
     st.session_state.accounts_list = accounts_list
     st.session_state.data_loaded = True
+    _apply_initial_filter_defaults()
     return True
+
+
+def ensure_data_loaded() -> bool:
+    """Ensure session state and YNAB data are initialized and loaded."""
+    return load_data()
 
 
 def _resolve_custom_month_defaults(
@@ -304,6 +354,8 @@ def setup_sidebar() -> bool:
 
 def main() -> None:
     """Main application function"""
+    st.set_page_config(page_title="YNAB Budget Dashboard", page_icon="💰", layout="wide")
+    inject_custom_css()
     initialize_session_state()
 
     if not load_data():
