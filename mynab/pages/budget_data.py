@@ -6,7 +6,7 @@ from mynab.transforms import filter_budget_by_selection
 
 
 def main() -> None:
-    render_page_header("💰 Budget Data")
+    render_page_header("💰 Plan")
 
     if not ensure_data_loaded():
         return

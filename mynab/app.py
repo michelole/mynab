@@ -137,6 +137,7 @@ def load_data() -> bool:
         return False
 
     categories_data, category_groups = process_categories_data(categories_response)
+    st.session_state.budget_id = budget_id
     st.session_state.budget_name = budget_name
     st.session_state.transactions_df = process_transactions_data(
         transactions_response, categories_data
@@ -365,13 +366,18 @@ def main() -> None:
         return
 
     pg = st.navigation(
-        [
-            st.Page("pages/overview.py", title="Overview", icon="📊"),
-            st.Page("pages/categories.py", title="Categories", icon="📋"),
-            st.Page("pages/accounts.py", title="Accounts", icon="🏦"),
-            st.Page("pages/transactions.py", title="Transactions", icon="📄"),
-            st.Page("pages/budget_data.py", title="Budget Data", icon="💰"),
-        ]
+        {
+            "": [
+                st.Page("pages/overview.py", title="Overview", icon="📊"),
+                st.Page("pages/categories.py", title="Categories", icon="📋"),
+                st.Page("pages/accounts.py", title="Accounts", icon="🏦"),
+                st.Page("pages/budgets.py", title="Budgets", icon="🪣"),
+            ],
+            "Raw Data": [
+                st.Page("pages/transactions.py", title="Transactions", icon="📄"),
+                st.Page("pages/budget_data.py", title="Plan", icon="💰"),
+            ],
+        }
     )
     pg.run()
 

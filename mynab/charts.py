@@ -224,9 +224,10 @@ def render_average_metrics_grid(
     target_amount: float | None = None,
     *,
     short: bool = True,
+    stat: str = "Average",
 ) -> None:
-    """Render a 2x2 grid of 3, 6, 12, and 24-month average metrics."""
-    unit = "Avg" if short else "Average"
+    """Render a 2x2 grid of 3, 6, 12, and 24-month metrics (average by default)."""
+    unit = ("Avg" if stat == "Average" else stat[:3]) if short else stat
     for row_windows in ((3, 6), (12, 24)):
         cols = st.columns(2)
         for col, window in zip(cols, row_windows, strict=True):
@@ -240,7 +241,7 @@ def render_average_metrics_grid(
                     value=format_currency(val),
                     delta=delta_text,
                     delta_color=delta_color,
-                    help=f"Average monthly amount over the last {window} months",
+                    help=f"{stat} monthly amount over the last {window} months",
                 )
 
 

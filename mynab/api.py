@@ -274,3 +274,49 @@ def process_months_data(
         if cat.budgeted != 0 or cat.activity != 0
     ]
     return pd.DataFrame(budget_data)
+
+
+def _month_starts_back(end_month: date, count: int) -> list[date]:
+    """First-of-month dates for `count` months ending at `end_month`, oldest first."""
+    months = pd.date_range(end=pd.Timestamp(end_month), periods=count, freq="MS")
+    return [m.date() for m in months]
+
+
+@st.cache_data(ttl=settings.cache_ttl)
+def get_category_balances(
+    access_token: str,
+    budget_id: str,
+    categories_data: Sequence[CategoryInfo],
+    months_back: int = 24,
+) -> pd.DataFrame:
+    """Fetch end-of-month available balance of every category for the last months.
+
+    YNAB's month detail already exposes each category's `balance` (the amount left at the end
+    of that month, including assignments, activity and money moved between categories), so no
+    money movements are needed. Cash left over from last month = previous month's balance.
+    """
+    cat_by_id = _index_categories_by_id(categories_data)
+    current_month = datetime.now(tz=UTC).replace(day=1).date()
+    records: list[dict[str, object]] = []
+    try:
+        configuration = Configuration(access_token=access_token)
+        with ApiClient(configuration) as api_client:
+            months_api = MonthsApi(api_client)
+            for month in _month_starts_back(current_month, months_back):
+                try:
+                    detail = months_api.get_plan_month(budget_id, month)
+                except OpenApiException:
+                    continue
+                records.extend(
+                    {
+                        "month": pd.Timestamp(month),
+                        "category": cat_by_id[cat.id]["name"],
+                        "category_group": cat_by_id[cat.id]["group"],
+                        "balance": cat.balance / 1000,
+                    }
+                    for cat in detail.data.month.categories or []
+                    if cat.id in cat_by_id
+                )
+    except (OSError, ValueError, TypeError) as e:
+        st.error(f"Error fetching category balances: {e!s}")
+    return pd.DataFrame(records, columns=["month", "category", "category_group", "balance"])
