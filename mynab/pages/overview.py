@@ -4,18 +4,25 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from mynab.utils import (
-    CategoryInfo,
+from mynab.charts import (
     add_bar_trace,
     add_forecast_traces,
     add_moving_average_trace,
     add_target_goal_trace,
     apply_standard_plot_layout,
+    create_unified_plot,
+    render_in_grid,
+    render_page_header,
+)
+from mynab.models import (
+    MIN_MONTHS_FOR_FORECAST,
+    CategoryInfo,
+)
+from mynab.transforms import (
     build_complete_monthly_df,
     build_overview_monthly_series,
     calculate_global_y_range,
     compute_overview_monthly_totals,
-    create_unified_plot,
     filter_budget_by_selection,
     filter_categorized_expense_transactions,
     filter_income_transactions,
@@ -24,8 +31,6 @@ from mynab.utils import (
     get_global_month_range,
     get_moving_average_window,
     moving_average_for_plot_months,
-    render_in_grid,
-    render_page_header,
     resolve_selected_category_groups,
 )
 
@@ -61,9 +66,7 @@ def _filter_and_aggregate_overview_data(
 ) -> tuple[pd.DataFrame | None, str]:
     """Filter transactions by overview data type and aggregate by month"""
     color = OVERVIEW_COLORS.get(data_type, "#1f77b4")
-    monthly_series = compute_overview_monthly_totals(
-        transactions_df, data_type, abs_expense=False
-    )
+    monthly_series = compute_overview_monthly_totals(transactions_df, data_type, abs_expense=False)
     if monthly_series.empty:
         return None, color
 
@@ -77,11 +80,11 @@ def _add_overview_forecast_traces(
     fig: go.Figure, complete_monthly_data: pd.DataFrame, data_type: str
 ) -> pd.DatetimeIndex | None:
     """Add forecast trend line and 3-month extension to overview figure"""
-    if len(complete_monthly_data) < 3:
+    if len(complete_monthly_data) < MIN_MONTHS_FOR_FORECAST:
         return None
 
     actual_data = complete_monthly_data[complete_monthly_data["amount"] != 0].copy()
-    if len(actual_data) < 3:
+    if len(actual_data) < MIN_MONTHS_FOR_FORECAST:
         return None
 
     is_expense = data_type == "total_expense"
@@ -98,22 +101,18 @@ def _add_overview_forecast_traces(
 def create_comprehensive_plot(
     data_type: str,
     transactions_df: pd.DataFrame,
-    budget_df: pd.DataFrame | None,
+    _budget_df: pd.DataFrame | None,
     global_month_range: pd.DatetimeIndex,
     y_range: Sequence[float] | None = None,
     target_goal: float | None = None,
 ) -> go.Figure | None:
     """Create comprehensive plot for total income, total expense, or total net income"""
-    monthly_data, color = _filter_and_aggregate_overview_data(
-        data_type, transactions_df
-    )
+    monthly_data, color = _filter_and_aggregate_overview_data(data_type, transactions_df)
     if monthly_data is None:
         return None
 
     complete_monthly_data = build_complete_monthly_df(global_month_range, monthly_data)
-    months_to_plot: list[str] = [
-        str(m) for m in complete_monthly_data["month"].tolist()
-    ]
+    months_to_plot: list[str] = [str(m) for m in complete_monthly_data["month"].tolist()]
     y_values = (
         complete_monthly_data["amount"].abs()
         if data_type == "total_expense"
@@ -133,9 +132,7 @@ def create_comprehensive_plot(
 
     ma_window = get_moving_average_window()
     full_monthly = build_overview_monthly_series(data_type)
-    ma_plot = moving_average_for_plot_months(
-        full_monthly, months_to_plot, window=ma_window
-    )
+    ma_plot = moving_average_for_plot_months(full_monthly, months_to_plot, window=ma_window)
     add_moving_average_trace(fig, months_to_plot, ma_plot, ma_window=ma_window)
 
     future_months = _add_overview_forecast_traces(fig, complete_monthly_data, data_type)
@@ -169,23 +166,17 @@ def _render_overview_summary_metrics(
     with col3:
         st.metric("Total Net Income", format_currency(total_net_income))
 
-    monthly_income = compute_overview_monthly_totals(
-        filtered_transactions_df, "total_income"
-    )
+    monthly_income = compute_overview_monthly_totals(filtered_transactions_df, "total_income")
     monthly_expenses = compute_overview_monthly_totals(
         filtered_transactions_df, "total_expense", abs_expense=False
     )
-    monthly_net = compute_overview_monthly_totals(
-        filtered_transactions_df, "total_net_income"
-    )
+    monthly_net = compute_overview_monthly_totals(filtered_transactions_df, "total_net_income")
 
     col4, col5, col6 = st.columns(3)
     with col4:
         st.metric("Avg Monthly Income", format_currency(_mean_or_zero(monthly_income)))
     with col5:
-        st.metric(
-            "Avg Monthly Expenses", format_currency(_mean_or_zero(monthly_expenses))
-        )
+        st.metric("Avg Monthly Expenses", format_currency(_mean_or_zero(monthly_expenses)))
     with col6:
         st.metric("Avg Monthly Net Income", format_currency(_mean_or_zero(monthly_net)))
 
@@ -310,13 +301,8 @@ def _validate_overview_session() -> bool:
     if not st.session_state.get("data_loaded", False):
         st.error("Data not loaded. Please go back to the main page.")
         return False
-    if (
-        st.session_state.get("start_date") is None
-        or st.session_state.get("end_date") is None
-    ):
-        st.error(
-            "Month range not set. Please configure the month range in the sidebar."
-        )
+    if st.session_state.get("start_date") is None or st.session_state.get("end_date") is None:
+        st.error("Month range not set. Please configure the month range in the sidebar.")
         return False
     if st.session_state.get("transactions_df") is None:
         st.error("No transaction data available.")
@@ -349,9 +335,7 @@ def main() -> None:
         end_date=end_date,
         preserve_income=True,
     )
-    budget_df = filter_budget_by_selection(
-        budget_df, selected_category_groups, selected_categories
-    )
+    budget_df = filter_budget_by_selection(budget_df, selected_category_groups, selected_categories)
     global_month_range, _, _ = get_global_month_range(
         filtered_transactions_df, start_date, end_date
     )

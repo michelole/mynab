@@ -14,11 +14,7 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Office/Business :: Financial",
     "Topic :: Scientific/Engineering :: Visualization",
 ]
@@ -29,8 +25,8 @@ dependencies = [
     "pandas~=3.1.0",
     "plotly~=7.1.0",
     "numpy~=2.5.4",
-    "python-dotenv~=1.2.4",
-    "watchdog~=6.0.0",
+    "pydantic>=2.11.0",
+    "pydantic-settings~=2.16.1",
 ]
 
 [project.scripts]
@@ -55,16 +51,71 @@ addopts = "-v --tb=short"
 
 [dependency-groups]
 dev = [
+    "deptry>=0.25.1",
     "pytest~=9.1.1",
     "ruff~=0.17.2",
     "ty~=0.0.91",
 ]
 
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
 [tool.ruff.lint]
-extend-select = ["C90", "ANN"]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+    "C4",     # flake8-comprehensions
+    "C90",    # mccabe complexity
+    "ANN",    # flake8-annotations
+    "ASYNC",  # flake8-async
+    "S",      # flake8-bandit
+    "DTZ",    # flake8-datetimez
+    "T20",    # flake8-print
+    "PT",     # flake8-pytest-style
+    "RET",    # flake8-return
+    "ARG",    # flake8-unused-arguments
+    "PTH",    # flake8-use-pathlib
+    "PD",     # pandas-vet
+    "NPY",    # NumPy-specific rules
+    "PERF",   # Perflint
+    "FURB",   # refurb
+    "PL",     # Pylint
+    "RUF",    # Ruff-specific rules
+    "TC",     # flake8-type-checking
+    "TRY",    # tryceratops
+    "FBT",    # flake8-boolean-trap
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "PLR2004", "PLR0913", "SLF001", "FBT003"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 5
+
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = false
+mypy-init-return = true
+
+[tool.ruff.lint.pylint]
+max-args = 7
+max-returns = 4
+max-branches = 10
+
+[tool.ty.environment]
+python-version = "3.13"
+python-platform = "all"
+
+[tool.ty.terminal]
+error-on-warning = true
+
+[tool.ty.analysis]
+respect-type-ignore-comments = false
 
 [tool.ty.rules]
 all = "error"

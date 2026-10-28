@@ -1,9 +1,7 @@
 import streamlit as st
 
-from mynab.utils import (
-    filter_transactions_by_selection,
-    render_page_header,
-)
+from mynab.charts import render_page_header
+from mynab.transforms import filter_transactions_by_selection
 
 DISPLAY_COLUMNS: list[str] = [
     "date",

@@ -4,27 +4,31 @@ from datetime import date
 
 import streamlit as st
 
-import config
-from mynab.utils import (
+from mynab.api import (
+    get_ynab_data,
+    process_categories_data,
+    process_months_data,
+    process_transactions_data,
+)
+from mynab.charts import inject_custom_css
+from mynab.config import settings
+from mynab.models import (
     DEFAULT_MONTH_RANGE_PRESET,
     DEFAULT_MOVING_AVERAGE_WINDOW,
     MONTH_RANGE_PRESET_OPTIONS,
     MOVING_AVERAGE_WINDOW_OPTIONS,
     CategoryInfo,
+    get_default_categories,
+    get_default_category_groups,
+    get_excluded_groups,
+)
+from mynab.transforms import (
     clamp_month_range,
     dates_from_month_selection,
     format_month_option,
-    get_default_categories,
-    get_default_category_groups,
     get_default_month_range,
-    get_excluded_groups,
-    get_ynab_data,
-    inject_custom_css,
     list_available_months,
     month_start,
-    process_categories_data,
-    process_months_data,
-    process_transactions_data,
     resolve_month_range_preset,
 )
 
@@ -56,7 +60,7 @@ def initialize_session_state() -> None:
 
 def _get_api_token() -> str | None:
     """Retrieve YNAB API token from environment or config."""
-    return os.getenv("YNAB_API_KEY") or config.YNAB_API_KEY
+    return os.getenv("YNAB_API_KEY") or settings.ynab_api_key
 
 
 def load_data() -> bool:
@@ -85,11 +89,7 @@ def load_data() -> bool:
             accounts_list,
         ) = get_ynab_data(api_token)
 
-    if (
-        budget_id is None
-        or categories_response is None
-        or transactions_response is None
-    ):
+    if budget_id is None or categories_response is None or transactions_response is None:
         return False
 
     categories_data, category_groups = process_categories_data(categories_response)
@@ -135,7 +135,7 @@ def _resolve_custom_month_defaults(
 def _render_custom_month_selectors(available_months: Sequence[date]) -> bool:
     """Render start and end month selectboxes for Custom range preset."""
     month_labels = [format_month_option(m) for m in available_months]
-    label_to_month = dict(zip(month_labels, available_months))
+    label_to_month = dict(zip(month_labels, available_months, strict=True))
     start_idx, end_idx = _resolve_custom_month_defaults(available_months)
 
     start_label = st.selectbox(
@@ -208,16 +208,20 @@ def _setup_plot_settings_section() -> None:
         "Moving average window",
         options=ma_labels,
         index=ma_labels.index(ma_label),
-        help="Lookback for the moving average line on plots. Does not affect the 12-month forecast trend.",
+        help=(
+            "Lookback for the moving average line on plots. "
+            "Does not affect the 12-month forecast trend."
+        ),
     )
-    st.session_state.moving_average_window = MOVING_AVERAGE_WINDOW_OPTIONS[
-        selected_ma_label
-    ]
+    st.session_state.moving_average_window = MOVING_AVERAGE_WINDOW_OPTIONS[selected_ma_label]
 
     st.session_state.global_scale_enabled = st.checkbox(
         "Global Scale",
         value=st.session_state.global_scale_enabled,
-        help="When enabled, all plots in a section will share the same y-axis scale for better comparison.",
+        help=(
+            "When enabled, all plots in a section will share the same "
+            "y-axis scale for better comparison."
+        ),
     )
 
 
@@ -246,9 +250,7 @@ def _get_categories_for_groups(
 ) -> list[str]:
     """Collect sorted category names belonging to the selected category groups."""
     names = [
-        cat["name"]
-        for group_name in selected_groups
-        for cat in category_groups.get(group_name, [])
+        cat["name"] for group_name in selected_groups for cat in category_groups.get(group_name, [])
     ]
     return sorted(names)
 
@@ -276,15 +278,16 @@ def _setup_category_filters_section() -> None:
     st.session_state.selected_category_groups = selected_category_groups
 
     st.header("📋 Categories")
-    available_categories = _get_categories_for_groups(
-        category_groups, selected_category_groups
-    )
+    available_categories = _get_categories_for_groups(category_groups, selected_category_groups)
     st.session_state.selected_categories = _multiselect_with_fallback(
         "Select categories to include:",
         available_categories,
         st.session_state.selected_categories,
         get_default_categories(),
-        "Choose which categories to include in the analysis. Leave empty to show all categories from selected groups.",
+        (
+            "Choose which categories to include in the analysis. "
+            "Leave empty to show all categories from selected groups."
+        ),
     )
 
 

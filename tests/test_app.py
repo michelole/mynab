@@ -2,15 +2,51 @@
 
 from collections.abc import Sequence
 from datetime import date
+from uuid import uuid4
 
 import pandas as pd
 import pytest
+from ynab.models import (
+    Account,
+    AccountsResponse,
+    AccountsResponseData,
+    AccountType,
+    CategoriesResponse,
+    CategoriesResponseData,
+    Category,
+    CategoryGroupWithCategories,
+    MonthDetail,
+    MonthDetailResponse,
+    MonthDetailResponseData,
+    TransactionClearedStatus,
+    TransactionDetail,
+    TransactionsResponse,
+    TransactionsResponseData,
+)
+
+from mynab.utils import (
+    AVERAGE_WINDOWS,
+    DEFAULT_MOVING_AVERAGE_WINDOW,
+    MOVING_AVERAGE_WINDOW_OPTIONS,
+    CategoryInfo,
+    _extract_accounts_list,
+    calculate_entity_window_averages,
+    calculate_forecast_trend,
+    calculate_moving_average,
+    calculate_series_tail_average,
+    calculate_series_window_averages,
+    compute_overview_monthly_totals,
+    format_target_delta,
+    moving_average_label,
+    process_categories_data,
+    process_months_data,
+    process_transactions_data,
+    resolve_month_range_preset,
+)
 
 
 def test_calculate_moving_average() -> None:
     """Test moving average calculation."""
-    from mynab.utils import calculate_moving_average
-
     # Test data
     data = pd.Series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
 
@@ -23,14 +59,6 @@ def test_calculate_moving_average() -> None:
 
 def test_calculate_weighted_moving_average() -> None:
     """Test 12-month weighted moving average calculation."""
-    from mynab.utils import (
-        DEFAULT_MOVING_AVERAGE_WINDOW,
-        MOVING_AVERAGE_WINDOW_OPTIONS,
-        calculate_moving_average,
-        calculate_series_tail_average,
-        moving_average_label,
-    )
-
     assert DEFAULT_MOVING_AVERAGE_WINDOW == "weighted"
     assert MOVING_AVERAGE_WINDOW_OPTIONS["12 months (weighted)"] == "weighted"
     assert moving_average_label("weighted") == "12-Month Weighted Moving Average"
@@ -43,15 +71,11 @@ def test_calculate_weighted_moving_average() -> None:
     assert result.iloc[-1] == pytest.approx(650.0 / 78.0)
 
     # Tail average helper matches last weighted moving average value
-    assert calculate_series_tail_average(data, "weighted") == pytest.approx(
-        650.0 / 78.0
-    )
+    assert calculate_series_tail_average(data, "weighted") == pytest.approx(650.0 / 78.0)
 
 
 def test_calculate_forecast_trend() -> None:
     """Test forecast trend calculation."""
-    from mynab.utils import calculate_forecast_trend
-
     # Test data
     data = pd.Series([1, 2, 3, 4, 5])
 
@@ -70,7 +94,6 @@ def test_calculate_forecast_trend() -> None:
 
 def test_process_categories_data() -> None:
     """Test categories data processing."""
-    from mynab.utils import process_categories_data
 
     # Mock categories response
     class MockCategory:
@@ -78,6 +101,7 @@ def test_process_categories_data() -> None:
             self,
             id: str,
             name: str,
+            *,
             hidden: bool = False,
             deleted: bool = False,
             goal_target: int | None = None,
@@ -91,9 +115,7 @@ def test_process_categories_data() -> None:
             self.goal_target_date = goal_target_date
 
     class MockCategoryGroup:
-        def __init__(
-            self, id: str, name: str, categories: Sequence[MockCategory]
-        ) -> None:
+        def __init__(self, id: str, name: str, categories: Sequence[MockCategory]) -> None:
             self.id = id
             self.name = name
             self.categories = categories
@@ -111,14 +133,14 @@ def test_process_categories_data() -> None:
         MockCategory(
             "cat1",
             "Food",
-            False,
-            False,
+            hidden=False,
+            deleted=False,
             goal_target=250000,
             goal_target_date=date(2026, 12, 1),
         ),
-        MockCategory("cat2", "Transport", False, False),
-        MockCategory("cat3", "Hidden", True, False),
-        MockCategory("cat4", "Deleted", False, True),
+        MockCategory("cat2", "Transport", hidden=False, deleted=False),
+        MockCategory("cat3", "Hidden", hidden=True, deleted=False),
+        MockCategory("cat4", "Deleted", hidden=False, deleted=True),
     ]
 
     group = MockCategoryGroup("group1", "Living Expenses", categories)
@@ -146,7 +168,6 @@ def test_process_categories_data() -> None:
 
 def test_process_transactions_data() -> None:
     """Test transactions data processing including split subtransactions."""
-    from mynab.utils import CategoryInfo, process_transactions_data
 
     class MockSubTransaction:
         def __init__(
@@ -170,6 +191,7 @@ def test_process_transactions_data() -> None:
             category_name: str | None = None,
             payee_name: str | None = None,
             memo: str | None = None,
+            *,
             id: str | None = None,
             subtransactions: Sequence[MockSubTransaction] | None = None,
         ) -> None:
@@ -191,13 +213,9 @@ def test_process_transactions_data() -> None:
             self.data = MockTransactionsData(transactions)
 
     transactions = [
-        MockTransaction(
-            "2024-01-01", -5000, "cat1", "Food", "Grocery Store", "Food shopping"
-        ),
+        MockTransaction("2024-01-01", -5000, "cat1", "Food", "Grocery Store", "Food shopping"),
         MockTransaction("2024-01-02", 1000, "cat1", "Food", "Refund", "Return"),
-        MockTransaction(
-            "2024-01-03", -2000, "cat2", "Transport", "Gas Station", "Fuel"
-        ),
+        MockTransaction("2024-01-03", -2000, "cat2", "Transport", "Gas Station", "Fuel"),
         MockTransaction(
             "2024-01-04",
             -3000,
@@ -231,12 +249,6 @@ def test_process_transactions_data() -> None:
 
 def test_overview_monthly_totals_and_presets() -> None:
     """Test overview monthly aggregation, target delta formatting, and month range presets."""
-    from mynab.utils import (
-        compute_overview_monthly_totals,
-        format_target_delta,
-        resolve_month_range_preset,
-    )
-
     df = pd.DataFrame(
         [
             {
@@ -281,12 +293,6 @@ def test_overview_monthly_totals_and_presets() -> None:
 
 def test_multi_window_averages() -> None:
     """Test 3/6/12/24 month averages calculation across full history."""
-    from mynab.utils import (
-        AVERAGE_WINDOWS,
-        calculate_entity_window_averages,
-        calculate_series_window_averages,
-    )
-
     assert AVERAGE_WINDOWS == (3, 6, 12, 24)
 
     series = pd.Series(list(range(1, 25)), dtype=float)
@@ -314,33 +320,6 @@ def test_multi_window_averages() -> None:
 
 def test_ynab_sdk_models_integration() -> None:
     """Test processing functions against real ynab SDK models."""
-    from uuid import uuid4
-
-    from ynab.models import (
-        Account,
-        AccountsResponse,
-        AccountsResponseData,
-        AccountType,
-        CategoriesResponse,
-        CategoriesResponseData,
-        Category,
-        CategoryGroupWithCategories,
-        MonthDetail,
-        MonthDetailResponse,
-        MonthDetailResponseData,
-        TransactionClearedStatus,
-        TransactionDetail,
-        TransactionsResponse,
-        TransactionsResponseData,
-    )
-
-    from mynab.utils import (
-        _extract_accounts_list,
-        process_categories_data,
-        process_months_data,
-        process_transactions_data,
-    )
-
     group_id = uuid4()
     cat_id = uuid4()
     acc_id = uuid4()
@@ -432,9 +411,7 @@ def test_ynab_sdk_models_integration() -> None:
         transfer_payee_id=uuid4(),
         deleted=False,
     )
-    acc_resp = AccountsResponse(
-        data=AccountsResponseData(accounts=[acc], server_knowledge=1)
-    )
+    acc_resp = AccountsResponse(data=AccountsResponseData(accounts=[acc], server_knowledge=1))
     acc_list = _extract_accounts_list(acc_resp)
     assert len(acc_list) == 1
     assert acc_list[0]["type"] == "checking"

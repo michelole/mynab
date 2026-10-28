@@ -4,13 +4,21 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from mynab.utils import (
-    AccountInfo,
-    MovingAverageWindow,
+from mynab.charts import (
     add_bar_trace,
     add_forecast_traces,
     add_moving_average_trace,
     apply_standard_plot_layout,
+    render_average_metrics_grid,
+    render_in_grid,
+    render_page_header,
+)
+from mynab.models import (
+    MIN_MONTHS_FOR_FORECAST,
+    AccountInfo,
+    MovingAverageWindow,
+)
+from mynab.transforms import (
     build_account_net_worth_series,
     calculate_moving_average,
     calculate_series_window_averages,
@@ -20,9 +28,6 @@ from mynab.utils import (
     get_moving_average_window,
     map_account_net_worth_to_months,
     map_moving_average_to_months,
-    render_average_metrics_grid,
-    render_in_grid,
-    render_page_header,
 )
 
 
@@ -34,10 +39,10 @@ def _add_account_ma_and_forecast_traces(
     ma_window: MovingAverageWindow,
 ) -> None:
     """Add moving average and forecast traces to an account plot if enough data exists."""
-    if len(complete_monthly_data) < 3:
+    if len(complete_monthly_data) < MIN_MONTHS_FOR_FORECAST:
         return
     actual_data = complete_monthly_data[complete_monthly_data["net_worth"] != 0].copy()
-    if len(actual_data) < 3:
+    if len(actual_data) < MIN_MONTHS_FOR_FORECAST:
         return
 
     ma_series = calculate_moving_average(net_worth_full.abs(), window=ma_window)
@@ -69,9 +74,7 @@ def create_account_plot(
         {
             "month_date": global_month_range,
             "month": months_to_plot,
-            "net_worth": map_account_net_worth_to_months(
-                net_worth_full, months_to_plot
-            ),
+            "net_worth": map_account_net_worth_to_months(net_worth_full, months_to_plot),
         }
     ).sort_values("month_date")
 
@@ -95,9 +98,7 @@ def create_account_plot(
     return fig, available, averages
 
 
-def _render_account_card(
-    account_name: str, global_month_range: pd.DatetimeIndex
-) -> None:
+def _render_account_card(account_name: str, global_month_range: pd.DatetimeIndex) -> None:
     """Render metrics and chart for a single account"""
     st.subheader(account_name)
     result = create_account_plot(account_name, global_month_range)
@@ -164,9 +165,7 @@ def main() -> None:
 
     start_date = st.session_state.start_date
     end_date = st.session_state.end_date
-    filtered_transactions_df = filter_data_by_date_range(
-        transactions_df, start_date, end_date
-    )
+    filtered_transactions_df = filter_data_by_date_range(transactions_df, start_date, end_date)
     global_month_range, _, _ = get_global_month_range(
         filtered_transactions_df, start_date, end_date
     )

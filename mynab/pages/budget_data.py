@@ -1,9 +1,7 @@
 import streamlit as st
 
-from mynab.utils import (
-    filter_budget_by_selection,
-    render_page_header,
-)
+from mynab.charts import render_page_header
+from mynab.transforms import filter_budget_by_selection
 
 
 def main() -> None:
@@ -23,9 +21,7 @@ def main() -> None:
     selected_categories = (
         [str(c) for c in raw_categories] if isinstance(raw_categories, list) else []
     )
-    budget_df = filter_budget_by_selection(
-        budget_df, selected_category_groups, selected_categories
-    )
+    budget_df = filter_budget_by_selection(budget_df, selected_category_groups, selected_categories)
 
     if not budget_df.empty:
         st.dataframe(budget_df, width="stretch", height=600)

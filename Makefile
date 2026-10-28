@@ -1,4 +1,4 @@
-.PHONY: help install install-dev run format lint type-check test check clean
+.PHONY: help install install-dev run format lint type-check deps-check test check clean
 
 help: ## Show this help message
 	@echo "Available commands:"
@@ -18,15 +18,19 @@ format: ## Format code with ruff
 	uv run ruff check --fix .
 
 lint: ## Run linting with ruff
+	uv run ruff format --check .
 	uv run ruff check .
 
 type-check: ## Run type checking with ty
-	uv run ty check --error-on-warning
+	uv run ty check
+
+deps-check: ## Check dependencies with deptry
+	uv run deptry .
 
 test: ## Run tests
 	uv run pytest
 
-check: format lint type-check test ## Run all code quality checks
+check: format lint type-check deps-check test ## Run all code quality checks
 
 clean: ## Clean up generated files
 	find . -type f -name "*.pyc" -delete

@@ -4,21 +4,25 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from mynab.utils import (
+from mynab.charts import (
+    create_unified_plot,
+    render_average_metrics_grid,
+    render_in_grid,
+    render_page_header,
+)
+from mynab.models import (
     CategoryInfo,
     DateLike,
+)
+from mynab.transforms import (
     _group_monthly_amounts,
     calculate_global_y_range,
     calculate_series_window_averages,
-    create_unified_plot,
     filter_budget_by_selection,
     filter_transactions_by_selection,
     format_currency,
     get_full_month_period_index,
     get_global_month_range,
-    render_average_metrics_grid,
-    render_in_grid,
-    render_page_header,
 )
 
 
@@ -51,15 +55,9 @@ def calculate_summary_metrics(
 ) -> tuple[float, float, dict[int, float]]:
     """Calculate summary metrics for all selected categories from full transaction history"""
     total_target_budget = float(
-        sum(
-            amt
-            for cat in categories_data
-            if (amt := cat.get("target_amount")) is not None
-        )
+        sum(amt for cat in categories_data if (amt := cat.get("target_amount")) is not None)
     )
-    total_available_budget = (
-        float(budget_df["available"].sum()) if not budget_df.empty else 0.0
-    )
+    total_available_budget = float(budget_df["available"].sum()) if not budget_df.empty else 0.0
 
     tx = filter_transactions_by_selection(
         transactions_df, selected_category_groups, selected_categories
@@ -176,8 +174,7 @@ def _filter_categories_page_data(
     filtered_categories_data = [
         cat
         for cat in categories_data
-        if cat["group"] in selected_category_groups
-        and cat["name"] in selected_categories
+        if cat["group"] in selected_category_groups and cat["name"] in selected_categories
     ]
     return filtered_transactions_df, filtered_budget_df, filtered_categories_data
 
@@ -205,16 +202,14 @@ def main() -> None:
         [str(c) for c in raw_categories] if isinstance(raw_categories, list) else []
     )
 
-    filtered_transactions_df, budget_df, filtered_categories_data = (
-        _filter_categories_page_data(
-            transactions_df,
-            budget_df,
-            categories_data,
-            start_date,
-            end_date,
-            selected_category_groups,
-            selected_categories,
-        )
+    filtered_transactions_df, budget_df, filtered_categories_data = _filter_categories_page_data(
+        transactions_df,
+        budget_df,
+        categories_data,
+        start_date,
+        end_date,
+        selected_category_groups,
+        selected_categories,
     )
     filtered_category_names = [cat["name"] for cat in filtered_categories_data]
 
